@@ -20,6 +20,18 @@ end
 Rails::Initializer.run do |config|
   # Settings in config/environments/* take precedence those specified here
   
+  # session secret key
+  secret_file = File.join(RAILS_ROOT, "config", "secret")
+  if File.exist? secret_file
+    secret = File.read(secret_file)
+  else
+    raise "run rake secret > config/secret to create session secret"
+  end
+
+  config.action_controller.session = {
+    :session_key => '_redmine_session',
+    :secret => secret
+  }
   # Skip frameworks you're not going to use
   # config.frameworks -= [ :action_web_service, :action_mailer ]
 
