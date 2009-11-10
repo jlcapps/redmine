@@ -46,5 +46,5 @@ after "deploy:update_code", :configure_secret
 desc "copy secret into the current release path" 
 task :configure_secret, :roles => :app do 
   secret = "#{current_path}/config/secret" 
-  run "cp #{db_config} #{release_path}/config/secret" 
+  run "cp #{secret} #{release_path}/config/secret" 
 end 
