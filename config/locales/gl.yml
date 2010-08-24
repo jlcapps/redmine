@@ -45,6 +45,7 @@ gl:
           tb: "TB"
   
   
+  direction: ltr
   date:
     formats:
       default:  "%e/%m/%Y"
@@ -205,7 +206,7 @@ gl:
   default_priority_low: Baixa
   default_priority_normal: Normal
   default_priority_urgent: Urxente
-  default_role_developper: Desenvolvedor
+  default_role_developer: Desenvolvedor
   default_role_manager: Xefe de proxecto
   default_role_reporter: Informador
   default_tracker_bug: Erros
@@ -639,7 +640,7 @@ gl:
   mail_subject_account_activation_request: "Petición de activación de conta {{value}}"
   mail_subject_lost_password: "O teu contrasinal de {{value}}"
   mail_subject_register: "Activación da conta de {{value}}"
-  mail_subject_reminder: "{{count}} petición(s) rematarán nos próximos días"
+  mail_subject_reminder: "{{count}} petición(s) rematarán nos próximos {{days}} días"
   notice_account_activated: A súa conta foi activada. Xa pode conectarse.
   notice_account_invalid_creditentials: Usuario ou contrasinal inválido.
   notice_account_lost_email_sent: Enviouse un correo con instrucións para elixir un novo contrasinal.
@@ -917,3 +918,13 @@ gl:
   error_unable_to_connect: Unable to connect ({{value}})
   error_can_not_remove_role: This role is in use and can not be deleted.
   error_can_not_delete_tracker: This tracker contains issues and can't be deleted.
+  field_principal: Principal
+  label_my_page_block: My page block
+  notice_failed_to_save_members: "Failed to save member(s): {{errors}}."
+  text_zoom_out: Zoom out
+  text_zoom_in: Zoom in
+  notice_unable_delete_time_entry: Unable to delete time log entry.
+  label_overall_spent_time: Overall spent time
+  field_time_entries: Log time
+  project_module_gantt: Gantt
+  project_module_calendar: Calendar

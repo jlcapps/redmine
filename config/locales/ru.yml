@@ -11,6 +11,7 @@
 # была возможность минимальной локализации приложения на русский язык.
 
 ru:
+  direction: ltr
   date:
     formats:
       default: "%d.%m.%Y"
@@ -41,7 +42,7 @@ ru:
 
   number:
     format:
-      separator: "."
+      separator: ","
       delimiter: " "
       precision: 3
 
@@ -64,7 +65,7 @@ ru:
     human:
       format:
         delimiter: ""
-        precision: 1
+        precision: 2
       # Rails 2.2
       # storage_units: [байт, КБ, МБ, ГБ, ТБ]
 
@@ -255,17 +256,17 @@ ru:
   default_doc_category_tech: Техническая документация
   default_doc_category_user: Документация пользователя
   default_issue_status_in_progress: В работе
-  default_issue_status_closed: Закрыт
+  default_issue_status_closed: Закрыта
   default_issue_status_feedback: Обратная связь
-  default_issue_status_new: Новый
+  default_issue_status_new: Новая
   default_issue_status_rejected: Отказ
-  default_issue_status_resolved: Решено
+  default_issue_status_resolved: Решена
   default_priority_high: Высокий
   default_priority_immediate: Немедленный
   default_priority_low: Низкий
   default_priority_normal: Нормальный
   default_priority_urgent: Срочный
-  default_role_developper: Разработчик
+  default_role_developer: Разработчик
   default_role_manager: Менеджер
   default_role_reporter: Генератор отчетов
   default_tracker_bug: Ошибка
@@ -360,12 +361,13 @@ ru:
   field_role: Роль
   field_searchable: Доступно для поиска
   field_spent_on: Дата
-  field_start_date: Начало
+  field_start_date: Начата
   field_start_page: Стартовая страница
   field_status: Статус
   field_subject: Тема
   field_subproject: Подпроект
   field_summary: Сводка
+  field_time_entries: Затраченное время
   field_time_zone: Часовой пояс
   field_title: Название
   field_tracker: Трекер
@@ -419,7 +421,7 @@ ru:
   label_auth_source: Режим аутентификации
   label_auth_source_new: Новый режим аутентификации
   label_auth_source_plural: Режимы аутентификации
-  label_blocked_by: заблокировано
+  label_blocked_by: блокируется
   label_blocks: блокирует
   label_board: Форум
   label_board_new: Новый форум
@@ -503,7 +505,7 @@ ru:
   label_filter_add: Добавить фильтр
   label_filter_plural: Фильтры
   label_float: С плавающей точкой
-  label_follows: следующий
+  label_follows: следующая
   label_gantt: Диаграмма Ганта
   label_general: Общее
   label_generate_key: Сгенерировать ключ
@@ -576,6 +578,7 @@ ru:
   label_more: Больше
   label_my_account: Моя учетная запись
   label_my_page: Моя страница
+  label_my_page_block: Блок моей страницы
   label_my_projects: Мои проекты
   label_new: Новый
   label_new_statuses_allowed: Разрешены новые статусы
@@ -608,7 +611,7 @@ ru:
   label_planning: Планирование
   label_please_login: Пожалуйста, войдите.
   label_plugins: Модули
-  label_precedes: предшествует
+  label_precedes: предыдущая
   label_preferences: Предпочтения
   label_preview: Предварительный просмотр
   label_previous: Предыдущий
@@ -754,7 +757,7 @@ ru:
   mail_subject_account_activation_request: "Запрос на активацию пользователя в системе {{value}}"
   mail_subject_lost_password: "Ваш {{value}} пароль"
   mail_subject_register: "Активация учетной записи {{value}}"
-  mail_subject_reminder: "{{count}} назначенных на Вас задач в ближайшие дни"
+  mail_subject_reminder: "{{count}} назначенных на Вас задач в ближайшие {{days}} дней"
 
   notice_account_activated: Ваша учетная запись активирована. Вы можете войти.
   notice_account_invalid_creditentials: Неправильное имя пользователя или пароль
@@ -770,6 +773,7 @@ ru:
   notice_email_error: "Во время отправки письма произошла ошибка ({{value}})"
   notice_email_sent: "Отправлено письмо {{value}}"
   notice_failed_to_save_issues: "Не удалось сохранить {{count}} пункт(ов) из {{total}} выбранных: {{ids}}."
+  notice_failed_to_save_members: "Не удалось сохранить участника(ов): {{errors}}."
   notice_feeds_access_key_reseted: Ваш ключ доступа RSS был перезапущен.
   notice_file_not_found: Страница, на которую Вы пытаетесь зайти, не существует или удалена.
   notice_locking_conflict: Информация обновлена другим пользователем.
@@ -841,6 +845,8 @@ ru:
   project_module_repository: Хранилище
   project_module_time_tracking: Учет времени
   project_module_wiki: Wiki
+  project_module_gantt: Диаграмма Ганта
+  project_module_calendar: Календарь
 
   setting_activity_days_default: Количество дней, отображаемых в Активности
   setting_app_subtitle: Подзаголовок приложения
@@ -923,7 +929,7 @@ ru:
   text_project_identifier_info: 'Допустимы строчные буквы (a-z), цифры и дефис.<br />Сохраненный идентификатор не может быть изменен.'
   text_reassign_time_entries: 'Перенести зарегистрированное время на следующую задачу:'
   text_regexp_info: напр. ^[A-Z0-9]+$
-  text_repository_usernames_mapping: "Выберите или обновите пользователя Redmine, связанного с найденными именами в журнале хранилица.\nПользователи с одинаковыми именами или email в Redmine и хранилище связываются автоматически."
+  text_repository_usernames_mapping: "Выберите или обновите пользователя Redmine, связанного с найденными именами в журнале хранилища.\nПользователи с одинаковыми именами или email в Redmine и хранилище связываются автоматически."
   text_rmagick_available: Доступно использование RMagick (опционально)
   text_select_mail_notifications: Выберите действия, на которые будет отсылаться уведомление на электронную почту.
   text_select_project_modules: 'Выберите модули, которые будут использованы в проекте:'
@@ -1017,3 +1023,9 @@ ru:
   label_close_versions: Закрыть завершенные версии
   label_board_sticky: Прикреплена
   label_board_locked: Заблокирована
+  field_principal: Имя
+  text_zoom_out: Отдалить
+  text_zoom_in: Приблизить
+  notice_unable_delete_time_entry: Невозможно удалить запись журнала.
+  label_overall_spent_time: Всего затрачено времени
+
