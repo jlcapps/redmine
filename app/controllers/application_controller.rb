@@ -153,7 +153,7 @@ class ApplicationController < ActionController::Base
 
   # Authorize the user for the requested action
   def authorize(ctrl = params[:controller], action = params[:action], global = false)
-    allowed = User.current.allowed_to?({:controller => ctrl, :action => action}, @project, :global => global)
+    allowed = User.current.allowed_to?({:controller => ctrl, :action => action}, @project || @projects, :global => global)
     allowed ? true : deny_access
   end
 
@@ -165,6 +165,13 @@ class ApplicationController < ActionController::Base
   # Find project of id params[:id]
   def find_project
     @project = Project.find(params[:id])
+  rescue ActiveRecord::RecordNotFound
+    render_404
+  end
+
+  # Find project of id params[:project_id]
+  def find_project_by_project_id
+    @project = Project.find(params[:project_id])
   rescue ActiveRecord::RecordNotFound
     render_404
   end
@@ -206,16 +213,19 @@ class ApplicationController < ActionController::Base
   def find_issues
     @issues = Issue.find_all_by_id(params[:id] || params[:ids])
     raise ActiveRecord::RecordNotFound if @issues.empty?
-    projects = @issues.collect(&:project).compact.uniq
-    if projects.size == 1
-      @project = projects.first
-    else
+    @projects = @issues.collect(&:project).compact.uniq
+    @project = @projects.first if @projects.size == 1
+  rescue ActiveRecord::RecordNotFound
+    render_404
+  end
+  
+  # Check if project is unique before bulk operations
+  def check_project_uniqueness
+    unless @project
       # TODO: let users bulk edit/move/destroy issues from different projects
       render_error 'Can not bulk edit/move/destroy issues from different projects'
       return false
     end
-  rescue ActiveRecord::RecordNotFound
-    render_404
   end
   
   # make sure that the user is a member of the project (or admin) if project is private

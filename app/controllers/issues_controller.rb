@@ -21,6 +21,7 @@ class IssuesController < ApplicationController
   
   before_filter :find_issue, :only => [:show, :edit, :update]
   before_filter :find_issues, :only => [:bulk_edit, :bulk_update, :move, :perform_move, :destroy]
+  before_filter :check_project_uniqueness, :only => [:move, :perform_move]
   before_filter :find_project, :only => [:new, :create]
   before_filter :authorize, :except => [:index]
   before_filter :find_optional_project, :only => [:index]
@@ -47,6 +48,7 @@ class IssuesController < ApplicationController
   include SortHelper
   include IssuesHelper
   helper :timelog
+  helper :gantt
   include Redmine::Export::PDF
 
   verify :method => [:post, :delete],
@@ -133,7 +135,7 @@ class IssuesController < ApplicationController
       call_hook(:controller_issues_new_after_save, { :params => params, :issue => @issue})
       respond_to do |format|
         format.html {
-          redirect_to(params[:continue] ? { :action => 'new', :issue => {:tracker_id => @issue.tracker, :parent_issue_id => @issue.parent_issue_id}.reject {|k,v| v.nil?} } :
+          redirect_to(params[:continue] ?  { :action => 'new', :project_id => @project, :issue => {:tracker_id => @issue.tracker, :parent_issue_id => @issue.parent_issue_id}.reject {|k,v| v.nil?} } :
                       { :action => 'show', :id => @issue })
         }
         format.xml  { render :action => 'show', :status => :created, :location => url_for(:controller => 'issues', :action => 'show', :id => @issue) }
@@ -192,17 +194,16 @@ class IssuesController < ApplicationController
   # Bulk edit a set of issues
   def bulk_edit
     @issues.sort!
-    @available_statuses = Workflow.available_statuses(@project)
-    @custom_fields = @project.all_issue_custom_fields
+    @available_statuses = @projects.map{|p|Workflow.available_statuses(p)}.inject{|memo,w|memo & w}
+    @custom_fields = @projects.map{|p|p.all_issue_custom_fields}.inject{|memo,c|memo & c}
+    @assignables = @projects.map(&:assignable_users).inject{|memo,a| memo & a}
+    @trackers = @projects.map(&:trackers).inject{|memo,t| memo & t}
   end
 
   def bulk_update
     @issues.sort!
+    attributes = parse_params_for_bulk_issue_attributes(params)
 
-    attributes = (params[:issue] || {}).reject {|k,v| v.blank?}
-    attributes.keys.each {|k| attributes[k] = '' if attributes[k] == 'none'}
-    attributes[:custom_field_values].reject! {|k,v| v.blank?} if attributes[:custom_field_values]
-    
     unsaved_issue_ids = []
     @issues.each do |issue|
       issue.reload
@@ -243,7 +244,7 @@ class IssuesController < ApplicationController
     end
     @issues.each(&:destroy)
     respond_to do |format|
-      format.html { redirect_to :action => 'index', :project_id => @project }
+      format.html { redirect_back_or_default(:action => 'index', :project_id => @project) }
       format.xml  { head :ok }
       format.json  { head :ok }
     end
@@ -273,7 +274,7 @@ private
     @edit_allowed = User.current.allowed_to?(:edit_issues, @project)
     @time_entry = TimeEntry.new
     
-    @notes = params[:notes]
+    @notes = params[:notes] || (params[:issue].present? ? params[:issue][:notes] : nil)
     @issue.init_journal(User.current, @notes)
     # User can change issue attributes only if he has :edit permission or if a workflow transition is allowed
     if (@edit_allowed || !@allowed_statuses.empty?) && params[:issue]
@@ -286,6 +287,7 @@ private
   end
 
   # TODO: Refactor, lots of extra code in here
+  # TODO: Changing tracker on an existing issue should not trigger this
   def build_new_issue_from_params
     if params[:id].blank?
       @issue = Issue.new
@@ -304,7 +306,9 @@ private
     end
     if params[:issue].is_a?(Hash)
       @issue.safe_attributes = params[:issue]
-      @issue.watcher_user_ids = params[:issue]['watcher_user_ids'] if User.current.allowed_to?(:add_issue_watchers, @project)
+      if User.current.allowed_to?(:add_issue_watchers, @project) && @issue.new_record?
+        @issue.watcher_user_ids = params[:issue]['watcher_user_ids']
+      end
     end
     @issue.author = User.current
     @issue.start_date ||= Date.today
@@ -317,5 +321,12 @@ private
       render_error l(:error_no_default_issue_status)
       return false
     end
+  end
+
+  def parse_params_for_bulk_issue_attributes(params)
+    attributes = (params[:issue] || {}).reject {|k,v| v.blank?}
+    attributes.keys.each {|k| attributes[k] = '' if attributes[k] == 'none'}
+    attributes[:custom_field_values].reject! {|k,v| v.blank?} if attributes[:custom_field_values]
+    attributes
   end
 end
