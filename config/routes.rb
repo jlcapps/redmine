@@ -32,7 +32,7 @@ ActionController::Routing::Routes.draw do |map|
       wiki_views.connect 'projects/:project_id/wiki/export', :action => 'export'
       wiki_views.connect 'projects/:project_id/wiki/page_index', :action => 'page_index'
       wiki_views.connect 'projects/:project_id/wiki/date_index', :action => 'date_index'
-      wiki_views.connect 'projects/:project_id/wiki/:page', :action => 'index', :page => nil
+      wiki_views.connect 'projects/:project_id/wiki/:page', :action => 'show', :page => nil
       wiki_views.connect 'projects/:project_id/wiki/:page/edit', :action => 'edit'
       wiki_views.connect 'projects/:project_id/wiki/:page/rename', :action => 'rename'
       wiki_views.connect 'projects/:project_id/wiki/:page/history', :action => 'history'
@@ -41,8 +41,10 @@ ActionController::Routing::Routes.draw do |map|
     end
     
     wiki_routes.connect 'projects/:project_id/wiki/:page/:action', 
-      :action => /edit|rename|destroy|preview|protect/,
+      :action => /rename|destroy|preview|protect|add_attachment/,
       :conditions => {:method => :post}
+
+    wiki_routes.connect 'projects/:project_id/wiki/:page/edit', :action => 'update', :conditions => {:method => :post}
   end
   
   map.with_options :controller => 'messages' do |messages_routes|
