@@ -13,11 +13,11 @@
 }
 
 .jstElements {
-	padding: 3px 3px;
+	padding: 3px 3px 3px 0;
 }
 
 .jstElements button {
-	margin-right : 6px;
+	margin-right: 4px;
 	width : 24px;
 	height: 24px;
 	padding: 4px;
@@ -29,7 +29,8 @@
 	background-repeat: no-repeat;
 }
 .jstElements button:hover {
-	border-color : #000;
+	border-color: #bbb;
+  background-color: #e5e5e5;
 }
 .jstElements button span {
 	display : none;	
@@ -41,10 +42,11 @@
 .jstSpacer {
 	width : 0px;
 	font-size: 1px;
-	margin-right: 4px;
+	margin-right: 6px;
 }
 
-.jstElements .help { float: right; margin-right: 1em; padding-top: 8px; font-size: 0.9em; }
+.jstElements .help { float: right; margin-right: 0.5em; padding-top: 8px; font-size: 0.9em; }
+.jstElements .help a {padding: 2px 0 2px 20px; background: url(../images/help.png) no-repeat 0 50%;}
 
 /* Buttons
 -------------------------------------------------------- */

@@ -1,8 +1,10 @@
 class ContextMenusController < ApplicationController
   helper :watchers
-  
+  helper :issues
+
   def issues
-    @issues = Issue.find_all_by_id(params[:ids], :include => :project)
+    @issues = Issue.visible.all(:conditions => {:id => params[:ids]}, :include => :project)
+
     if (@issues.size == 1)
       @issue = @issues.first
       @allowed_statuses = @issue.new_statuses_allowed_to(User.current)
@@ -24,20 +26,36 @@ class ContextMenusController < ApplicationController
             :delete => User.current.allowed_to?(:delete_issues, @projects)
             }
     if @project
-      @assignables = @project.assignable_users
-      @assignables << @issue.assigned_to if @issue && @issue.assigned_to && !@assignables.include?(@issue.assigned_to)
+      if @issue
+        @assignables = @issue.assignable_users
+      else
+        @assignables = @project.assignable_users
+      end
       @trackers = @project.trackers
     else
       #when multiple projects, we only keep the intersection of each set
       @assignables = @projects.map(&:assignable_users).inject{|memo,a| memo & a}
       @trackers = @projects.map(&:trackers).inject{|memo,t| memo & t}
     end
-    
-    @priorities = IssuePriority.all.reverse
+
+    @priorities = IssuePriority.active.reverse
     @statuses = IssueStatus.find(:all, :order => 'position')
     @back = back_url
-    
+
     render :layout => false
   end
-  
+
+  def time_entries
+    @time_entries = TimeEntry.all(
+       :conditions => {:id => params[:ids]}, :include => :project)
+    @projects = @time_entries.collect(&:project).compact.uniq
+    @project = @projects.first if @projects.size == 1
+    @activities = TimeEntryActivity.shared.active
+    @can = {:edit   => User.current.allowed_to?(:log_time, @projects),
+            :update => User.current.allowed_to?(:log_time, @projects),
+            :delete => User.current.allowed_to?(:log_time, @projects)
+            }
+    @back = back_url
+    render :layout => false
+  end
 end

@@ -1,16 +1,16 @@
 # Redmine - project management software
-# Copyright (C) 2006-2009  Jean-Philippe Lang
+# Copyright (C) 2006-2011  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 2
 # of the License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -19,6 +19,7 @@ class MyController < ApplicationController
   before_filter :require_login
 
   helper :issues
+  helper :users
   helper :custom_fields
 
   BLOCKS = { 'issuesassignedtome' => :label_assigned_to_me_issues,
@@ -30,8 +31,8 @@ class MyController < ApplicationController
              'timelog' => :label_spent_time
            }.merge(Redmine::Views::MyPage::Block.additional_blocks).freeze
 
-  DEFAULT_LAYOUT = {  'left' => ['issuesassignedtome'], 
-                      'right' => ['issuesreportedbyme'] 
+  DEFAULT_LAYOUT = {  'left' => ['issuesassignedtome'],
+                      'right' => ['issuesreportedbyme']
                    }.freeze
 
   verify :xhr => true,
@@ -53,21 +54,18 @@ class MyController < ApplicationController
     @user = User.current
     @pref = @user.pref
     if request.post?
-      @user.attributes = params[:user]
-      @user.mail_notification = params[:notification_option] || 'only_my_events'
+      @user.safe_attributes = params[:user]
       @user.pref.attributes = params[:pref]
       @user.pref[:no_self_notified] = (params[:no_self_notified] == '1')
       if @user.save
         @user.pref.save
-        @user.notified_project_ids = (params[:notification_option] == 'selected' ? params[:notified_project_ids] : [])
+        @user.notified_project_ids = (@user.mail_notification == 'selected' ? params[:notified_project_ids] : [])
         set_language_if_valid @user.language
         flash[:notice] = l(:notice_account_updated)
         redirect_to :action => 'account'
         return
       end
     end
-    @notification_options = @user.valid_notification_options
-    @notification_option = @user.mail_notification #? ? 'all' : (@user.notified_projects_ids.empty? ? 'none' : 'selected')    
   end
 
   # Manage user's password
@@ -90,7 +88,7 @@ class MyController < ApplicationController
       end
     end
   end
-  
+
   # Create a new feeds key
   def reset_rss_key
     if request.post?
@@ -124,7 +122,7 @@ class MyController < ApplicationController
     @block_options = []
     BLOCKS.each {|k, v| @block_options << [l("my.blocks.#{v}", :default => [v, v.to_s.humanize]), k.dasherize]}
   end
-  
+
   # Add a block to user's page
   # The block is added on top of the page
   # params[:block] : id of the block to add
@@ -138,10 +136,10 @@ class MyController < ApplicationController
     # add it on top
     layout['top'].unshift block
     @user.pref[:my_page_layout] = layout
-    @user.pref.save 
+    @user.pref.save
     render :partial => "block", :locals => {:user => @user, :block_name => block}
   end
-  
+
   # Remove a block to user's page
   # params[:block] : id of the block to remove
   def remove_block
@@ -151,7 +149,7 @@ class MyController < ApplicationController
     layout = @user.pref[:my_page_layout] || {}
     %w(top left right).each {|f| (layout[f] ||= []).delete block }
     @user.pref[:my_page_layout] = layout
-    @user.pref.save 
+    @user.pref.save
     render :nothing => true
   end
 
@@ -171,7 +169,7 @@ class MyController < ApplicationController
         }
         layout[group] = group_items
         @user.pref[:my_page_layout] = layout
-        @user.pref.save 
+        @user.pref.save
       end
     end
     render :nothing => true

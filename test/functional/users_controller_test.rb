@@ -1,21 +1,21 @@
-# redMine - project management software
-# Copyright (C) 2006-2007  Jean-Philippe Lang
+# Redmine - project management software
+# Copyright (C) 2006-2011  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 2
 # of the License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-require File.dirname(__FILE__) + '/../test_helper'
+require File.expand_path('../../test_helper', __FILE__)
 require 'users_controller'
 
 # Re-raise errors caught by the controller.
@@ -23,9 +23,9 @@ class UsersController; def rescue_action(e) raise e end; end
 
 class UsersControllerTest < ActionController::TestCase
   include Redmine::I18n
-  
-  fixtures :users, :projects, :members, :member_roles, :roles, :auth_sources
-  
+
+  fixtures :users, :projects, :members, :member_roles, :roles, :auth_sources, :custom_fields, :custom_values, :groups_users
+
   def setup
     @controller = UsersController.new
     @request    = ActionController::TestRequest.new
@@ -33,7 +33,7 @@ class UsersControllerTest < ActionController::TestCase
     User.current = nil
     @request.session[:user_id] = 1 # admin
   end
-  
+
   def test_index
     get :index
     assert_response :success
@@ -48,7 +48,7 @@ class UsersControllerTest < ActionController::TestCase
     # active users only
     assert_nil assigns(:users).detect {|u| !u.active?}
   end
-  
+
   def test_index_with_name_filter
     get :index, :name => 'john'
     assert_response :success
@@ -58,13 +58,35 @@ class UsersControllerTest < ActionController::TestCase
     assert_equal 1, users.size
     assert_equal 'John', users.first.firstname
   end
-  
+
+  def test_index_with_group_filter
+    get :index, :group_id => '10'
+    assert_response :success
+    assert_template 'index'
+    users = assigns(:users)
+    assert users.any?
+    assert_equal([], (users - Group.find(10).users))
+  end
+
   def test_show
     @request.session[:user_id] = nil
     get :show, :id => 2
     assert_response :success
     assert_template 'show'
     assert_not_nil assigns(:user)
+
+    assert_tag 'li', :content => /Phone number/
+  end
+
+  def test_show_should_not_display_hidden_custom_fields
+    @request.session[:user_id] = nil
+    UserCustomField.find_by_name('Phone number').update_attribute :visible, false
+    get :show, :id => 2
+    assert_response :success
+    assert_template 'show'
+    assert_not_nil assigns(:user)
+
+    assert_no_tag 'li', :content => /Phone number/
   end
 
   def test_show_should_not_fail_when_custom_values_are_nil
@@ -83,20 +105,20 @@ class UsersControllerTest < ActionController::TestCase
     get :show, :id => 5
     assert_response 404
   end
-  
+
   def test_show_should_not_reveal_users_with_no_visible_activity_or_project
     @request.session[:user_id] = nil
     get :show, :id => 9
     assert_response 404
   end
-  
+
   def test_show_inactive_by_admin
     @request.session[:user_id] = 1
     get :show, :id => 5
     assert_response 200
     assert_not_nil assigns(:user)
   end
-  
+
   def test_show_displays_memberships_based_on_project_visibility
     @request.session[:user_id] = 1
     get :show, :id => 2
@@ -107,64 +129,108 @@ class UsersControllerTest < ActionController::TestCase
     assert project_ids.include?(2) #private project admin can see
   end
 
-  context "GET :new" do
-    setup do
-      get :new
-    end
-
-    should_assign_to :user
-    should_respond_with :success
-    should_render_template :new
+  def test_show_current_should_require_authentication
+    @request.session[:user_id] = nil
+    get :show, :id => 'current'
+    assert_response 302
   end
 
-  context "POST :create" do
-    context "when successful" do
-      setup do
-        post :create, :user => {
-          :firstname => 'John',
-          :lastname => 'Doe',
-          :login => 'jdoe',
-          :password => 'test',
-          :password_confirmation => 'test',
-          :mail => 'jdoe@gmail.com'
-        },
-        :notification_option => 'none'
-      end
+  def test_show_current
+    @request.session[:user_id] = 2
+    get :show, :id => 'current'
+    assert_response :success
+    assert_template 'show'
+    assert_equal User.find(2), assigns(:user)
+  end
 
-      should_assign_to :user
-      should_respond_with :redirect
-      should_redirect_to('user edit') { {:controller => 'users', :action => 'edit', :id => User.find_by_login('jdoe')}}
+  def test_new
+    get :new
 
-      should 'set the users mail notification' do
-        user = User.last
-        assert_equal 'none', user.mail_notification
+    assert_response :success
+    assert_template :new
+    assert assigns(:user)
+  end
+
+  def test_create
+    Setting.bcc_recipients = '1'
+
+    assert_difference 'User.count' do
+      assert_difference 'ActionMailer::Base.deliveries.size' do
+        post :create,
+          :user => {
+            :firstname => 'John',
+            :lastname => 'Doe',
+            :login => 'jdoe',
+            :password => 'secret',
+            :password_confirmation => 'secret',
+            :mail => 'jdoe@gmail.com',
+            :mail_notification => 'none'
+          },
+          :send_information => '1'
       end
     end
 
-    context "when unsuccessful" do
-      setup do
-        post :create, :user => {}
-      end
+    user = User.first(:order => 'id DESC')
+    assert_redirected_to :controller => 'users', :action => 'edit', :id => user.id
 
-      should_assign_to :user
-      should_respond_with :success
-      should_render_template :new
+    assert_equal 'John', user.firstname
+    assert_equal 'Doe', user.lastname
+    assert_equal 'jdoe', user.login
+    assert_equal 'jdoe@gmail.com', user.mail
+    assert_equal 'none', user.mail_notification
+    assert user.check_password?('secret')
+
+    mail = ActionMailer::Base.deliveries.last
+    assert_not_nil mail
+    assert_equal [user.mail], mail.bcc
+    assert mail.body.include?('secret')
+  end
+
+  def test_create_with_failure
+    assert_no_difference 'User.count' do
+      post :create, :user => {}
     end
 
+    assert_response :success
+    assert_template 'new'
+  end
+
+  def test_edit
+    get :edit, :id => 2
+
+    assert_response :success
+    assert_template 'edit'
+    assert_equal User.find(2), assigns(:user)
   end
 
   def test_update
     ActionMailer::Base.deliveries.clear
-    put :update, :id => 2, :user => {:firstname => 'Changed'}, :notification_option => 'all', :pref => {:hide_mail => '1', :comments_sorting => 'desc'}
+    put :update, :id => 2, :user => {:firstname => 'Changed', :mail_notification => 'only_assigned'}, :pref => {:hide_mail => '1', :comments_sorting => 'desc'}
 
     user = User.find(2)
     assert_equal 'Changed', user.firstname
-    assert_equal 'all', user.mail_notification
+    assert_equal 'only_assigned', user.mail_notification
     assert_equal true, user.pref[:hide_mail]
     assert_equal 'desc', user.pref[:comments_sorting]
     assert ActionMailer::Base.deliveries.empty?
   end
-  
+
+  def test_update_with_failure
+    assert_no_difference 'User.count' do
+      put :update, :id => 2, :user => {:firstname => ''}
+    end
+
+    assert_response :success
+    assert_template 'edit'
+  end
+
+  def test_update_with_group_ids_should_assign_groups
+    put :update, :id => 2, :user => {:group_ids => ['10']}
+
+    user = User.find(2)
+    assert_equal [10], user.group_ids
+  end
+
   def test_update_with_activation_should_send_a_notification
     u = User.new(:firstname => 'Foo', :lastname => 'Bar', :mail => 'foo.bar@somenet.foo', :language => 'fr')
     u.login = 'foo'
@@ -172,7 +238,7 @@ class UsersControllerTest < ActionController::TestCase
     u.save!
     ActionMailer::Base.deliveries.clear
     Setting.bcc_recipients = '1'
-    
+
     put :update, :id => u.id, :user => {:status => User::STATUS_ACTIVE}
     assert u.reload.active?
     mail = ActionMailer::Base.deliveries.last
@@ -180,15 +246,15 @@ class UsersControllerTest < ActionController::TestCase
     assert_equal ['foo.bar@somenet.foo'], mail.bcc
     assert mail.body.include?(ll('fr', :notice_account_activated))
   end
-  
-  def test_updat_with_password_change_should_send_a_notification
+
+  def test_update_with_password_change_should_send_a_notification
     ActionMailer::Base.deliveries.clear
     Setting.bcc_recipients = '1'
-    
+
+    put :update, :id => 2, :user => {:password => 'newpass', :password_confirmation => 'newpass'}, :send_information => '1'
     u = User.find(2)
-    put :update, :id => u.id, :user => {}, :password => 'newpass', :password_confirmation => 'newpass', :send_information => '1'
-    assert_equal User.hash_password('newpass'), u.reload.hashed_password 
-    
+    assert u.check_password?('newpass')
+
     mail = ActionMailer::Base.deliveries.last
     assert_not_nil mail
     assert_equal [u.mail], mail.bcc
@@ -201,19 +267,43 @@ class UsersControllerTest < ActionController::TestCase
     u.auth_source = AuthSource.find(1)
     u.save!
 
-    put :update, :id => u.id, :user => {:auth_source_id => ''}, :password => 'newpass', :password_confirmation => 'newpass'
+    put :update, :id => u.id, :user => {:auth_source_id => '', :password => 'newpass'}, :password_confirmation => 'newpass'
 
     assert_equal nil, u.reload.auth_source
-    assert_equal User.hash_password('newpass'), u.reload.hashed_password
+    assert u.check_password?('newpass')
   end
-  
+
+  def test_destroy
+    assert_difference 'User.count', -1 do
+      delete :destroy, :id => 2
+    end
+    assert_redirected_to '/users'
+    assert_nil User.find_by_id(2)
+  end
+
+  def test_destroy_should_not_accept_get_requests
+    assert_no_difference 'User.count' do
+      get :destroy, :id => 2
+    end
+    assert_response 405
+  end
+
+  def test_destroy_should_be_denied_for_non_admin_users
+    @request.session[:user_id] = 3
+
+    assert_no_difference 'User.count' do
+      get :destroy, :id => 2
+    end
+    assert_response 403
+  end
+
   def test_edit_membership
     post :edit_membership, :id => 2, :membership_id => 1,
                            :membership => { :role_ids => [2]}
     assert_redirected_to :action => 'edit', :id => '2', :tab => 'memberships'
     assert_equal [2], Member.find(1).role_ids
   end
-  
+
   def test_destroy_membership
     post :destroy_membership, :id => 2, :membership_id => 1
     assert_redirected_to :action => 'edit', :id => '2', :tab => 'memberships'

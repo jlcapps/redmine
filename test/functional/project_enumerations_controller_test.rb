@@ -1,8 +1,8 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require File.expand_path('../../test_helper', __FILE__)
 
 class ProjectEnumerationsControllerTest < ActionController::TestCase
   fixtures :all
-  
+
   def setup
     @request.session[:user_id] = nil
     Setting.default_language = 'en'
@@ -20,7 +20,7 @@ class ProjectEnumerationsControllerTest < ActionController::TestCase
     }
 
     assert_response :redirect
-    assert_redirected_to 'projects/ecookbook/settings/activities'
+    assert_redirected_to '/projects/ecookbook/settings/activities'
 
     # Created project specific activities...
     project = Project.find('ecookbook')
@@ -76,14 +76,14 @@ class ProjectEnumerationsControllerTest < ActionController::TestCase
                                                  })
     assert project_activity_two.save
 
-    
+
     put :update, :project_id => 1, :enumerations => {
       project_activity.id => {"custom_field_values"=>{"7" => "1"}, "active"=>"0"}, # De-activate
       project_activity_two.id => {"custom_field_values"=>{"7" => "1"}, "active"=>"0"} # De-activate
     }
 
     assert_response :redirect
-    assert_redirected_to 'projects/ecookbook/settings/activities'
+    assert_redirected_to '/projects/ecookbook/settings/activities'
 
     # Created project specific activities...
     project = Project.find('ecookbook')
@@ -102,7 +102,7 @@ class ProjectEnumerationsControllerTest < ActionController::TestCase
 
   def test_update_when_creating_new_activities_will_convert_existing_data
     assert_equal 3, TimeEntry.find_all_by_activity_id_and_project_id(9, 1).size
-    
+
     @request.session[:user_id] = 2 # manager
     put :update, :project_id => 1, :enumerations => {
       "9"=> {"parent_id"=>"9", "custom_field_values"=>{"7" => "1"}, "active"=>"0"} # Design, De-activate
@@ -126,7 +126,7 @@ class ProjectEnumerationsControllerTest < ActionController::TestCase
 
     assert_equal 3, TimeEntry.find_all_by_activity_id_and_project_id(9, 1).size
     assert_equal 1, TimeEntry.find_all_by_activity_id_and_project_id(10, 1).size
-    
+
     @request.session[:user_id] = 2 # manager
     put :update, :project_id => 1, :enumerations => {
       "9"=> {"parent_id"=>"9", "custom_field_values"=>{"7" => "1"}, "active"=>"0"}, # Design
@@ -159,12 +159,12 @@ class ProjectEnumerationsControllerTest < ActionController::TestCase
 
     delete :destroy, :project_id => 1
     assert_response :redirect
-    assert_redirected_to 'projects/ecookbook/settings/activities'
+    assert_redirected_to '/projects/ecookbook/settings/activities'
 
     assert_nil TimeEntryActivity.find_by_id(project_activity.id)
     assert_nil TimeEntryActivity.find_by_id(project_activity_two.id)
   end
-  
+
   def test_destroy_should_reassign_time_entries_back_to_the_system_activity
     @request.session[:user_id] = 2 # manager
     project_activity = TimeEntryActivity.new({
@@ -175,11 +175,11 @@ class ProjectEnumerationsControllerTest < ActionController::TestCase
                                              })
     assert project_activity.save
     assert TimeEntry.update_all("activity_id = '#{project_activity.id}'", ["project_id = ? AND activity_id = ?", 1, 9])
-    assert 3, TimeEntry.find_all_by_activity_id_and_project_id(project_activity.id, 1).size
-    
+    assert_equal 3, TimeEntry.find_all_by_activity_id_and_project_id(project_activity.id, 1).size
+
     delete :destroy, :project_id => 1
     assert_response :redirect
-    assert_redirected_to 'projects/ecookbook/settings/activities'
+    assert_redirected_to '/projects/ecookbook/settings/activities'
 
     assert_nil TimeEntryActivity.find_by_id(project_activity.id)
     assert_equal 0, TimeEntry.find_all_by_activity_id_and_project_id(project_activity.id, 1).size, "TimeEntries still assigned to project specific activity"

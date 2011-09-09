@@ -1,10 +1,29 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require File.expand_path('../../test_helper', __FILE__)
 
 class IssueMovesControllerTest < ActionController::TestCase
   fixtures :all
 
   def setup
     User.current = nil
+  end
+
+  def test_get_issue_moves_new
+    @request.session[:user_id] = 2
+    get :new, :id => 1
+
+    assert_tag :tag => 'option', :content => 'eCookbook',
+                                 :attributes => { :value => '1', :selected => 'selected' }
+    %w(new_tracker_id status_id priority_id assigned_to_id).each do |field|
+      assert_tag :tag => 'option', :content => '(No change)', :attributes => { :value => '' },
+                                   :parent => {:tag => 'select', :attributes => {:id => field}}
+      assert_no_tag :tag => 'option', :attributes => {:selected => 'selected'},
+                                      :parent => {:tag => 'select', :attributes => {:id => field}}
+    end
+
+    # Be sure we don't include inactive enumerations
+    assert ! IssuePriority.find(15).active?
+    assert_no_tag :option, :attributes => {:value => '15'},
+                           :parent => {:tag => 'select', :attributes => {:id => 'priority_id'} }
   end
 
   def test_create_one_issue_to_another_project
@@ -31,13 +50,38 @@ class IssueMovesControllerTest < ActionController::TestCase
     assert_equal 1, Issue.find(1).tracker_id
     assert_equal 2, Issue.find(2).tracker_id
   end
- 
+
   def test_bulk_create_to_another_tracker
     @request.session[:user_id] = 2
     post :create, :ids => [1, 2], :new_tracker_id => 2
     assert_redirected_to :controller => 'issues', :action => 'index', :project_id => 'ecookbook'
     assert_equal 2, Issue.find(1).tracker_id
     assert_equal 2, Issue.find(2).tracker_id
+  end
+
+  context "#create via bulk move" do
+    setup do
+      @request.session[:user_id] = 2
+    end
+
+    should "allow changing the issue priority" do
+      post :create, :ids => [1, 2], :priority_id => 6
+
+      assert_redirected_to :controller => 'issues', :action => 'index', :project_id => 'ecookbook'
+      assert_equal 6, Issue.find(1).priority_id
+      assert_equal 6, Issue.find(2).priority_id
+
+    end
+
+    should "allow adding a note when moving" do
+      post :create, :ids => [1, 2], :notes => 'Moving two issues'
+
+      assert_redirected_to :controller => 'issues', :action => 'index', :project_id => 'ecookbook'
+      assert_equal 'Moving two issues', Issue.find(1).journals.sort_by(&:id).last.notes
+      assert_equal 'Moving two issues', Issue.find(2).journals.sort_by(&:id).last.notes
+
+    end
+
   end
 
   def test_bulk_copy_to_another_project
@@ -47,7 +91,7 @@ class IssueMovesControllerTest < ActionController::TestCase
         post :create, :ids => [1, 2], :new_project_id => 2, :copy_options => {:copy => '1'}
       end
     end
-    assert_redirected_to 'projects/ecookbook/issues'
+    assert_redirected_to '/projects/ecookbook/issues'
   end
 
   context "#create via bulk copy" do
@@ -64,12 +108,12 @@ class IssueMovesControllerTest < ActionController::TestCase
       assert_equal issue_before_move.status_id, issue_after_move.status_id
       assert_equal issue_before_move.assigned_to_id, issue_after_move.assigned_to_id
     end
-    
+
     should "allow changing the issue's attributes" do
       # Fixes random test failure with Mysql
       # where Issue.all(:limit => 2, :order => 'id desc', :conditions => {:project_id => 2}) doesn't return the expected results
       Issue.delete_all("project_id=2")
-      
+
       @request.session[:user_id] = 2
       assert_difference 'Issue.count', 2 do
         assert_no_difference 'Project.find(1).issues.count' do
@@ -87,8 +131,21 @@ class IssueMovesControllerTest < ActionController::TestCase
         assert_equal '2009-12-31', issue.due_date.to_s, "Due date is incorrect"
       end
     end
+
+    should "allow adding a note when copying" do
+      @request.session[:user_id] = 2
+      assert_difference 'Issue.count', 1 do
+        post :create, :ids => [1], :copy_options => {:copy => '1'}, :notes => 'Copying one issue', :new_tracker_id => '', :assigned_to_id => 4, :status_id => 3, :start_date => '2009-12-01', :due_date => '2009-12-31'
+      end
+
+      issue = Issue.first(:order => 'id DESC')
+      assert_equal 1, issue.journals.size
+      journal = issue.journals.first
+      assert_equal 0, journal.details.size
+      assert_equal 'Copying one issue', journal.notes
+    end
   end
-  
+
   def test_copy_to_another_project_should_follow_when_needed
     @request.session[:user_id] = 2
     post :create, :ids => [1], :new_project_id => 2, :copy_options => {:copy => '1'}, :follow => '1'

@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/../test_helper'
+require File.expand_path('../../test_helper', __FILE__)
 
 class GanttsControllerTest < ActionController::TestCase
   fixtures :all
@@ -7,7 +7,7 @@ class GanttsControllerTest < ActionController::TestCase
     should "work" do
       i2 = Issue.find(2)
       i2.update_attribute(:due_date, 1.month.from_now)
-      
+
       get :show, :project_id => 1
       assert_response :success
       assert_template 'show.html.erb'
@@ -21,6 +21,25 @@ class GanttsControllerTest < ActionController::TestCase
       assert_select "div a.issue", /##{i.id}/
     end
 
+    should "work without issue due dates" do
+      Issue.update_all("due_date = NULL")
+
+      get :show, :project_id => 1
+      assert_response :success
+      assert_template 'show.html.erb'
+      assert_not_nil assigns(:gantt)
+    end
+
+    should "work without issue and version due dates" do
+      Issue.update_all("due_date = NULL")
+      Version.update_all("effective_date = NULL")
+
+      get :show, :project_id => 1
+      assert_response :success
+      assert_template 'show.html.erb'
+      assert_not_nil assigns(:gantt)
+    end
+
     should "work cross project" do
       get :show
       assert_response :success
@@ -28,6 +47,18 @@ class GanttsControllerTest < ActionController::TestCase
       assert_not_nil assigns(:gantt)
       assert_not_nil assigns(:gantt).query
       assert_nil assigns(:gantt).project
+    end
+
+    should "not disclose private projects" do
+      get :show
+      assert_response :success
+      assert_template 'show.html.erb'
+
+      assert_tag 'a', :content => /eCookbook/
+      # Root private project
+      assert_no_tag 'a', {:content => /OnlineStore/}
+      # Private children of a public project
+      assert_no_tag 'a', :content => /Private child of eCookbook/
     end
 
     should "export to pdf" do
@@ -45,7 +76,7 @@ class GanttsControllerTest < ActionController::TestCase
       assert @response.body.starts_with?('%PDF')
       assert_not_nil assigns(:gantt)
     end
-    
+
     should "export to png" do
       get :show, :project_id => 1, :format => 'png'
       assert_response :success
