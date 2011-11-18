@@ -144,6 +144,78 @@ class IssuesControllerTest < ActionController::TestCase
     assert_equal({'tracker_id' => {:operator => '=', :values => ['1']}}, query.filters)
   end
 
+  def test_index_with_short_filters
+
+    to_test = {
+      'status_id' => {
+        'o' => { :op => 'o', :values => [''] },
+        'c' => { :op => 'c', :values => [''] },
+        '7' => { :op => '=', :values => ['7'] },
+        '7|3|4' => { :op => '=', :values => ['7', '3', '4'] },
+        '=7' => { :op => '=', :values => ['7'] },
+        '!3' => { :op => '!', :values => ['3'] },
+        '!7|3|4' => { :op => '!', :values => ['7', '3', '4'] }},
+      'subject' => {
+        'This is a subject' => { :op => '=', :values => ['This is a subject'] },
+        'o' => { :op => '=', :values => ['o'] },
+        '~This is part of a subject' => { :op => '~', :values => ['This is part of a subject'] },
+        '!~This is part of a subject' => { :op => '!~', :values => ['This is part of a subject'] }},
+      'tracker_id' => {
+        '3' => { :op => '=', :values => ['3'] },
+        '=3' => { :op => '=', :values => ['3'] }},
+      'start_date' => {
+        '2011-10-12' => { :op => '=', :values => ['2011-10-12'] },
+        '=2011-10-12' => { :op => '=', :values => ['2011-10-12'] },
+        '>=2011-10-12' => { :op => '>=', :values => ['2011-10-12'] },
+        '<=2011-10-12' => { :op => '<=', :values => ['2011-10-12'] },
+        '><2011-10-01|2011-10-30' => { :op => '><', :values => ['2011-10-01', '2011-10-30'] },
+        '<t+2' => { :op => '<t+', :values => ['2'] },
+        '>t+2' => { :op => '>t+', :values => ['2'] },
+        't+2' => { :op => 't+', :values => ['2'] },
+        't' => { :op => 't', :values => [''] },
+        'w' => { :op => 'w', :values => [''] },
+        '>t-2' => { :op => '>t-', :values => ['2'] },
+        '<t-2' => { :op => '<t-', :values => ['2'] },
+        't-2' => { :op => 't-', :values => ['2'] }},
+      'created_on' => {
+        '>=2011-10-12' => { :op => '>=', :values => ['2011-10-12'] },
+        '<t+2' => { :op => '=', :values => ['<t+2'] },
+        '>t+2' => { :op => '=', :values => ['>t+2'] },
+        't+2' => { :op => 't', :values => ['+2'] }},
+      'cf_1' => {
+        'c' => { :op => '=', :values => ['c'] },
+        '!c' => { :op => '!', :values => ['c'] },
+        '!*' => { :op => '!*', :values => [''] },
+        '*' => { :op => '*', :values => [''] }},
+      'estimated_hours' => {
+        '=13.4' => { :op => '=', :values => ['13.4'] },
+        '>=45' => { :op => '>=', :values => ['45'] },
+        '<=125' => { :op => '<=', :values => ['125'] },
+        '><10.5|20.5' => { :op => '><', :values => ['10.5', '20.5'] },
+        '!*' => { :op => '!*', :values => [''] },
+        '*' => { :op => '*', :values => [''] }}
+    }
+
+    default_filter = { 'status_id' => {:operator => 'o', :values => [''] }}
+
+    to_test.each do |field, expression_and_expected|
+      expression_and_expected.each do |filter_expression, expected|
+
+        get :index, :set_filter => 1, field => filter_expression
+
+        assert_response :success
+        assert_template 'index'
+        assert_not_nil assigns(:issues)
+
+        query = assigns(:query)
+        assert_not_nil query
+        assert query.has_filter?(field)
+        assert_equal(default_filter.merge({field => {:operator => expected[:op], :values => expected[:values]}}), query.filters)
+      end
+    end
+
+  end
+
   def test_index_with_project_and_empty_filters
     get :index, :project_id => 1, :set_filter => 1, :fields => ['']
     assert_response :success
@@ -224,6 +296,69 @@ class IssuesControllerTest < ActionController::TestCase
     assert_equal 'text/csv', @response.content_type
   end
 
+  def test_index_csv_big_5
+    with_settings :default_language => "zh-TW" do
+      str_utf8  = "\xe4\xb8\x80\xe6\x9c\x88"
+      str_big5  = "\xa4@\xa4\xeb"
+      if str_utf8.respond_to?(:force_encoding)
+        str_utf8.force_encoding('UTF-8')
+        str_big5.force_encoding('Big5')
+      end
+      issue = Issue.new(:project_id => 1, :tracker_id => 1, :author_id => 3,
+                        :status_id => 1, :priority => IssuePriority.all.first,
+                        :subject => str_utf8)
+      assert issue.save
+
+      get :index, :project_id => 1, 
+                  :f => ['subject'], 
+                  :op => '=', :values => [str_utf8],
+                  :format => 'csv'
+      assert_equal 'text/csv', @response.content_type
+      lines = @response.body.chomp.split("\n")    
+      s1 = "\xaa\xac\xbaA"
+      if str_utf8.respond_to?(:force_encoding)
+        s1.force_encoding('Big5')
+      end
+      assert lines[0].include?(s1)
+      assert lines[1].include?(str_big5)
+    end
+  end
+
+  def test_index_csv_cannot_convert_should_be_replaced_big_5
+    with_settings :default_language => "zh-TW" do
+      str_utf8  = "\xe4\xbb\xa5\xe5\x86\x85"
+      if str_utf8.respond_to?(:force_encoding)
+        str_utf8.force_encoding('UTF-8')
+      end
+      issue = Issue.new(:project_id => 1, :tracker_id => 1, :author_id => 3,
+                        :status_id => 1, :priority => IssuePriority.all.first,
+                        :subject => str_utf8)
+      assert issue.save
+
+      get :index, :project_id => 1, 
+                  :f => ['subject'], 
+                  :op => '=', :values => [str_utf8],
+                  :format => 'csv'
+      assert_equal 'text/csv', @response.content_type
+      lines = @response.body.chomp.split("\n")    
+      s1 = "\xaa\xac\xbaA"
+      if str_utf8.respond_to?(:force_encoding)
+        s1.force_encoding('Big5')
+      end
+      assert lines[0].include?(s1)
+      s2 = lines[1].split(",")[5]
+      if s1.respond_to?(:force_encoding)
+        s3 = "\xa5H?"
+        s3.force_encoding('Big5')
+        assert_equal s3, s2
+      elsif RUBY_PLATFORM == 'java'
+        assert_equal "??", s2
+      else
+        assert_equal "\xa5H???", s2
+      end
+    end
+  end
+
   def test_index_pdf
     get :index, :format => 'pdf'
     assert_response :success
@@ -283,6 +418,27 @@ class IssuesControllerTest < ActionController::TestCase
                                  :children => { :count => 3 }
     assert_no_tag :tag => 'option', :attributes => { :value => 'project' },
                                     :parent => { :tag => 'select', :attributes => { :id => "selected_columns" } }
+  end
+
+  def test_index_without_project_should_implicitly_add_project_column_to_default_columns
+    Setting.issue_list_default_columns = ['tracker', 'subject', 'assigned_to']
+    get :index, :set_filter => 1
+
+    # query should use specified columns
+    query = assigns(:query)
+    assert_kind_of Query, query
+    assert_equal [:project, :tracker, :subject, :assigned_to], query.columns.map(&:name)
+  end
+
+  def test_index_without_project_and_explicit_default_columns_should_not_add_project_column
+    Setting.issue_list_default_columns = ['tracker', 'subject', 'assigned_to']
+    columns = ['tracker', 'subject', 'assigned_to']
+    get :index, :set_filter => 1, :c => columns
+
+    # query should use specified columns
+    query = assigns(:query)
+    assert_kind_of Query, query
+    assert_equal columns.map(&:to_sym), query.columns.map(&:name)
   end
 
   def test_index_with_custom_field_column
@@ -448,7 +604,7 @@ class IssuesControllerTest < ActionController::TestCase
   def test_show_atom
     get :show, :id => 2, :format => 'atom'
     assert_response :success
-    assert_template 'journals/index.rxml'
+    assert_template 'journals/index'
     # Inline image
     assert_select 'content', :text => Regexp.new(Regexp.quote('http://test.host/attachments/download/10'))
   end
@@ -474,6 +630,30 @@ class IssuesControllerTest < ActionController::TestCase
     assert ! IssuePriority.find(15).active?
     assert_no_tag :option, :attributes => {:value => '15'},
                            :parent => {:tag => 'select', :attributes => {:id => 'issue_priority_id'} }
+  end
+
+  def test_get_new_without_default_start_date_is_creation_date
+    Setting.default_issue_start_date_to_creation_date = 0
+
+    @request.session[:user_id] = 2
+    get :new, :project_id => 1, :tracker_id => 1
+    assert_response :success
+    assert_template 'new'
+
+    assert_tag :tag => 'input', :attributes => { :name => 'issue[start_date]',
+                                                 :value => nil }
+  end
+
+  def test_get_new_with_default_start_date_is_creation_date
+    Setting.default_issue_start_date_to_creation_date = 1
+
+    @request.session[:user_id] = 2
+    get :new, :project_id => 1, :tracker_id => 1
+    assert_response :success
+    assert_template 'new'
+
+    assert_tag :tag => 'input', :attributes => { :name => 'issue[start_date]',
+                                                 :value => Date.today.to_s }
   end
 
   def test_get_new_form_should_allow_attachment_upload
@@ -583,7 +763,9 @@ class IssuesControllerTest < ActionController::TestCase
     assert_equal group, issue.assigned_to
   end
 
-  def test_post_create_without_start_date
+  def test_post_create_without_start_date_and_default_start_date_is_not_creation_date
+    Setting.default_issue_start_date_to_creation_date = 0
+
     @request.session[:user_id] = 2
     assert_difference 'Issue.count' do
       post :create, :project_id => 1,
@@ -592,7 +774,6 @@ class IssuesControllerTest < ActionController::TestCase
                             :subject => 'This is the test_new issue',
                             :description => 'This is the description',
                             :priority_id => 5,
-                            :start_date => '',
                             :estimated_hours => '',
                             :custom_field_values => {'2' => 'Value for field 2'}}
     end
@@ -601,6 +782,27 @@ class IssuesControllerTest < ActionController::TestCase
     issue = Issue.find_by_subject('This is the test_new issue')
     assert_not_nil issue
     assert_nil issue.start_date
+  end
+
+  def test_post_create_without_start_date_and_default_start_date_is_creation_date
+    Setting.default_issue_start_date_to_creation_date = 1
+
+    @request.session[:user_id] = 2
+    assert_difference 'Issue.count' do
+      post :create, :project_id => 1,
+                 :issue => {:tracker_id => 3,
+                            :status_id => 2,
+                            :subject => 'This is the test_new issue',
+                            :description => 'This is the description',
+                            :priority_id => 5,
+                            :estimated_hours => '',
+                            :custom_field_values => {'2' => 'Value for field 2'}}
+    end
+    assert_redirected_to :controller => 'issues', :action => 'show', :id => Issue.last.id
+
+    issue = Issue.find_by_subject('This is the test_new issue')
+    assert_not_nil issue
+    assert_equal Date.today, issue.start_date
   end
 
   def test_post_create_and_continue
@@ -1370,7 +1572,7 @@ class IssuesControllerTest < ActionController::TestCase
       :attributes => {:name => "issue[custom_field_values][#{field.id}]"},
       :children => {
         :only => {:tag => 'option'},
-        :count => Project.find(1).versions.count + 1
+        :count => Project.find(1).shared_versions.count + 1
       }
   end
 

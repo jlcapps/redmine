@@ -23,7 +23,10 @@ require 'timelog_controller'
 class TimelogController; def rescue_action(e) raise e end; end
 
 class TimelogControllerTest < ActionController::TestCase
-  fixtures :projects, :enabled_modules, :roles, :members, :member_roles, :issues, :time_entries, :users, :trackers, :enumerations, :issue_statuses, :custom_fields, :custom_values
+  fixtures :projects, :enabled_modules, :roles, :members,
+           :member_roles, :issues, :time_entries, :users,
+           :trackers, :enumerations, :issue_statuses,
+           :custom_fields, :custom_values
 
   def setup
     @controller = TimelogController.new
@@ -325,5 +328,90 @@ class TimelogControllerTest < ActionController::TestCase
     assert_equal 'text/csv', @response.content_type
     assert @response.body.include?("Date,User,Activity,Project,Issue,Tracker,Subject,Hours,Comment,Overtime\n")
     assert @response.body.include?("\n04/21/2007,redMine Admin,Design,eCookbook,3,Bug,Error 281 when updating a recipe,1.0,\"\",\"\"\n")
+  end
+
+  def test_csv_big_5
+    user = User.find_by_id(3)
+    user.language = "zh-TW"
+    assert user.save
+    str_utf8  = "\xe4\xb8\x80\xe6\x9c\x88"
+    str_big5  = "\xa4@\xa4\xeb"
+    if str_utf8.respond_to?(:force_encoding)
+      str_utf8.force_encoding('UTF-8')
+      str_big5.force_encoding('Big5')
+    end
+    @request.session[:user_id] = 3
+    post :create, :project_id => 1,
+                :time_entry => {:comments => str_utf8,
+                                # Not the default activity
+                                :activity_id => '11',
+                                :issue_id => '',
+                                :spent_on => '2011-11-10',
+                                :hours => '7.3'}
+    assert_redirected_to :action => 'index', :project_id => 'ecookbook'
+
+    t = TimeEntry.find_by_comments(str_utf8)
+    assert_not_nil t
+    assert_equal 11, t.activity_id
+    assert_equal 7.3, t.hours
+    assert_equal 3, t.user_id
+
+    get :index, :project_id => 1, :format => 'csv',
+        :from => '2011-11-10', :to => '2011-11-10'
+    assert_response :success
+    assert_equal 'text/csv', @response.content_type
+    ar = @response.body.chomp.split("\n")
+    s1 = "\xa4\xe9\xb4\xc1"
+    if str_utf8.respond_to?(:force_encoding)
+      s1.force_encoding('Big5')
+    end
+    assert ar[0].include?(s1)
+    assert ar[1].include?(str_big5)
+  end
+
+  def test_csv_cannot_convert_should_be_replaced_big_5
+    user = User.find_by_id(3)
+    user.language = "zh-TW"
+    assert user.save
+    str_utf8  = "\xe4\xbb\xa5\xe5\x86\x85"
+    if str_utf8.respond_to?(:force_encoding)
+      str_utf8.force_encoding('UTF-8')
+    end
+    @request.session[:user_id] = 3
+    post :create, :project_id => 1,
+                :time_entry => {:comments => str_utf8,
+                                # Not the default activity
+                                :activity_id => '11',
+                                :issue_id => '',
+                                :spent_on => '2011-11-10',
+                                :hours => '7.3'}
+    assert_redirected_to :action => 'index', :project_id => 'ecookbook'
+
+    t = TimeEntry.find_by_comments(str_utf8)
+    assert_not_nil t
+    assert_equal 11, t.activity_id
+    assert_equal 7.3, t.hours
+    assert_equal 3, t.user_id
+
+    get :index, :project_id => 1, :format => 'csv',
+        :from => '2011-11-10', :to => '2011-11-10'
+    assert_response :success
+    assert_equal 'text/csv', @response.content_type
+    ar = @response.body.chomp.split("\n")
+    s1 = "\xa4\xe9\xb4\xc1"
+    if str_utf8.respond_to?(:force_encoding)
+      s1.force_encoding('Big5')
+    end
+    assert ar[0].include?(s1)
+    s2 = ar[1].split(",")[8]
+    if s2.respond_to?(:force_encoding)
+      s3 = "\xa5H?"
+      s3.force_encoding('Big5')
+      assert_equal s3, s2
+    elsif RUBY_PLATFORM == 'java'
+      assert_equal "??", s2
+    else
+      assert_equal "\xa5H???", s2
+    end
   end
 end

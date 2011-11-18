@@ -23,7 +23,7 @@ end
 
 Rails::Initializer.run do |config|
   # Settings in config/environments/* take precedence those specified here
-  
+
   # session secret key
   secret_file = File.join(RAILS_ROOT, "config", "secret")
   if File.exist? secret_file
@@ -68,7 +68,7 @@ Rails::Initializer.run do |config|
   config.action_mailer.perform_deliveries = false
 
   config.gem 'rubytree', :lib => 'tree'
-  config.gem 'coderay', :version => '~>0.9.7'
+  config.gem 'coderay', :version => '~>1.0.0'
   config.gem 'rdoc'
 
   # Load any local configuration that is kept out of source control

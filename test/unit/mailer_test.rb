@@ -20,7 +20,13 @@ require File.expand_path('../../test_helper', __FILE__)
 class MailerTest < ActiveSupport::TestCase
   include Redmine::I18n
   include ActionController::Assertions::SelectorAssertions
-  fixtures :all
+  fixtures :projects, :enabled_modules, :issues, :users, :members,
+           :member_roles, :roles, :documents, :attachments, :news,
+           :tokens, :journals, :journal_details, :changesets, :trackers,
+           :issue_statuses, :enumerations, :messages, :boards, :repositories,
+           :wikis, :wiki_pages, :wiki_contents, :wiki_content_versions,
+           :versions,
+           :comments
 
   def setup
     ActionMailer::Base.deliveries.clear
@@ -41,11 +47,19 @@ class MailerTest < ActiveSupport::TestCase
 
     assert_select_email do
       # link to the main ticket
-      assert_select "a[href=?]", "https://mydomain.foo/issues/1", :text => "Bug #1: Can't print recipes"
+      assert_select "a[href=?]",
+                    "https://mydomain.foo/issues/1",
+                    :text => "Bug #1: Can't print recipes"
       # link to a referenced ticket
-      assert_select "a[href=?][title=?]", "https://mydomain.foo/issues/2", "Add ingredients categories (Assigned)", :text => "#2"
+      assert_select "a[href=?][title=?]",
+                    "https://mydomain.foo/issues/2",
+                    "Add ingredients categories (Assigned)",
+                    :text => "#2"
       # link to a changeset
-      assert_select "a[href=?][title=?]", "https://mydomain.foo/projects/ecookbook/repository/revisions/2", "This commit fixes #1, #2 and references #1 &amp; #3", :text => "r2"
+      assert_select "a[href=?][title=?]",
+                    "https://mydomain.foo/projects/ecookbook/repository/revisions/2",
+                    "This commit fixes #1, #2 and references #1 &amp; #3",
+                    :text => "r2"
     end
   end
 
@@ -63,11 +77,19 @@ class MailerTest < ActiveSupport::TestCase
 
     assert_select_email do
       # link to the main ticket
-      assert_select "a[href=?]", "http://mydomain.foo/rdm/issues/1", :text => "Bug #1: Can't print recipes"
+      assert_select "a[href=?]",
+                    "http://mydomain.foo/rdm/issues/1",
+                    :text => "Bug #1: Can't print recipes"
       # link to a referenced ticket
-      assert_select "a[href=?][title=?]", "http://mydomain.foo/rdm/issues/2", "Add ingredients categories (Assigned)", :text => "#2"
+      assert_select "a[href=?][title=?]",
+                    "http://mydomain.foo/rdm/issues/2",
+                    "Add ingredients categories (Assigned)",
+                    :text => "#2"
       # link to a changeset
-      assert_select "a[href=?][title=?]", "http://mydomain.foo/rdm/projects/ecookbook/repository/revisions/2", "This commit fixes #1, #2 and references #1 &amp; #3", :text => "r2"
+      assert_select "a[href=?][title=?]",
+                    "http://mydomain.foo/rdm/projects/ecookbook/repository/revisions/2",
+                    "This commit fixes #1, #2 and references #1 &amp; #3",
+                    :text => "r2"
     end
   ensure
     # restore it
@@ -88,11 +110,19 @@ class MailerTest < ActiveSupport::TestCase
 
     assert_select_email do
       # link to the main ticket
-      assert_select "a[href=?]", "http://mydomain.foo/rdm/issues/1", :text => "Bug #1: Can't print recipes"
+      assert_select "a[href=?]",
+                    "http://mydomain.foo/rdm/issues/1",
+                    :text => "Bug #1: Can't print recipes"
       # link to a referenced ticket
-      assert_select "a[href=?][title=?]", "http://mydomain.foo/rdm/issues/2", "Add ingredients categories (Assigned)", :text => "#2"
+      assert_select "a[href=?][title=?]",
+                    "http://mydomain.foo/rdm/issues/2",
+                    "Add ingredients categories (Assigned)",
+                    :text => "#2"
       # link to a changeset
-      assert_select "a[href=?][title=?]", "http://mydomain.foo/rdm/projects/ecookbook/repository/revisions/2", "This commit fixes #1, #2 and references #1 &amp; #3", :text => "r2"
+      assert_select "a[href=?][title=?]",
+                    "http://mydomain.foo/rdm/projects/ecookbook/repository/revisions/2",
+                    "This commit fixes #1, #2 and references #1 &amp; #3",
+                    :text => "r2"
     end
   ensure
     # restore it
@@ -104,7 +134,7 @@ class MailerTest < ActiveSupport::TestCase
     Mailer.deliver_issue_add(issue)
     mail = ActionMailer::Base.deliveries.last
     assert_not_nil mail
-    assert_equal 'bulk', mail.header_string('Precedence')
+    assert_equal 'OOF', mail.header_string('X-Auto-Response-Suppress')
     assert_equal 'auto-generated', mail.header_string('Auto-Submitted')
   end
 
@@ -127,12 +157,22 @@ class MailerTest < ActiveSupport::TestCase
     assert mail.encoded.include?('href')
   end
 
-  def test_mail_from_with_phrase
+  def test_from_header
+    with_settings :mail_from => 'redmine@example.net' do
+      Mailer.deliver_test(User.find(1))
+    end
+    mail = ActionMailer::Base.deliveries.last
+    assert_not_nil mail
+    assert_equal 'redmine@example.net', mail.from_addrs.first.address
+  end
+
+  def test_from_header_with_phrase
     with_settings :mail_from => 'Redmine app <redmine@example.net>' do
       Mailer.deliver_test(User.find(1))
     end
     mail = ActionMailer::Base.deliveries.last
     assert_not_nil mail
+    assert_equal 'redmine@example.net', mail.from_addrs.first.address
     assert_equal 'Redmine app', mail.from_addrs.first.name
   end
 
@@ -184,7 +224,9 @@ class MailerTest < ActiveSupport::TestCase
     assert_nil mail.references
     assert_select_email do
       # link to the message
-      assert_select "a[href=?]", "http://mydomain.foo/boards/#{message.board.id}/topics/#{message.id}", :text => message.subject
+      assert_select "a[href=?]",
+                    "http://mydomain.foo/boards/#{message.board.id}/topics/#{message.id}",
+                    :text => message.subject
     end
   end
 
@@ -197,7 +239,9 @@ class MailerTest < ActiveSupport::TestCase
     assert_equal Mailer.message_id_for(message.parent), mail.references.first.to_s
     assert_select_email do
       # link to the reply
-      assert_select "a[href=?]", "http://mydomain.foo/boards/#{message.board.id}/topics/#{message.root.id}?r=#{message.id}#message-#{message.id}", :text => message.subject
+      assert_select "a[href=?]",
+                    "http://mydomain.foo/boards/#{message.board.id}/topics/#{message.root.id}?r=#{message.id}#message-#{message.id}",
+                    :text => message.subject
     end
   end
 

@@ -23,9 +23,9 @@ require 'attachments_controller'
 # Re-raise errors caught by the controller.
 class AttachmentsController; def rescue_action(e) raise e end; end
 
-
 class AttachmentsControllerTest < ActionController::TestCase
-  fixtures :users, :projects, :roles, :members, :member_roles, :enabled_modules, :issues, :trackers, :attachments,
+  fixtures :users, :projects, :roles, :members, :member_roles,
+           :enabled_modules, :issues, :trackers, :attachments,
            :versions, :wiki_pages, :wikis, :documents
 
   def setup
@@ -69,6 +69,43 @@ class AttachmentsControllerTest < ActionController::TestCase
     assert_response :success
     assert_template 'file'
     assert_equal 'text/html', @response.content_type
+  end
+
+  def test_show_text_file_utf_8
+    a = Attachment.new(:container => Issue.find(1),
+                       :file => uploaded_test_file("japanese-utf-8.txt", "text/plain"),
+                       :author => User.find(1))
+    assert a.save
+    assert_equal 'japanese-utf-8.txt', a.filename
+
+    str_japanese = "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e"
+    str_japanese.force_encoding('UTF-8') if str_japanese.respond_to?(:force_encoding)
+
+    get :show, :id => a.id
+    assert_response :success
+    assert_template 'file'
+    assert_equal 'text/html', @response.content_type
+    assert_tag :tag => 'th',
+               :content => '1',
+               :attributes => { :class => 'line-num' },
+               :sibling => { :tag => 'td', :content => /#{str_japanese}/ }
+  end
+
+  def test_show_text_file_should_strip_non_utf8_content
+    a = Attachment.new(:container => Issue.find(1),
+                       :file => uploaded_test_file("iso8859-1.txt", "text/plain"),
+                       :author => User.find(1))
+    assert a.save
+    assert_equal 'iso8859-1.txt', a.filename
+
+    get :show, :id => a.id
+    assert_response :success
+    assert_template 'file'
+    assert_equal 'text/html', @response.content_type
+    assert_tag :tag => 'th',
+               :content => '7',
+               :attributes => { :class => 'line-num' },
+               :sibling => { :tag => 'td', :content => /Demande cre avec succs/ }
   end
 
   def test_show_text_file_should_send_if_too_big

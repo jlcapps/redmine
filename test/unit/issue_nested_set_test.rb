@@ -51,9 +51,10 @@ class IssueNestedSetTest < ActiveSupport::TestCase
 
   def test_creating_a_child_in_different_project_should_not_validate
     issue = create_issue!
-    child = Issue.new(:project_id => 2, :tracker_id => 1, :author_id => 1, :subject => 'child', :parent_issue_id => issue.id)
+    child = Issue.new(:project_id => 2, :tracker_id => 1, :author_id => 1,
+                      :subject => 'child', :parent_issue_id => issue.id)
     assert !child.save
-    assert_not_nil child.errors.on(:parent_issue_id)
+    assert_not_nil child.errors[:parent_issue_id]
   end
 
   def test_move_a_root_to_child
@@ -178,7 +179,7 @@ class IssueNestedSetTest < ActiveSupport::TestCase
     child.reload
     child.parent_issue_id = grandchild.id
     assert !child.save
-    assert_not_nil child.errors.on(:parent_issue_id)
+    assert_not_nil child.errors[:parent_issue_id]
   end
 
   def test_moving_an_issue_should_keep_valid_relations_only
@@ -221,6 +222,20 @@ class IssueNestedSetTest < ActiveSupport::TestCase
     assert !Issue.exists?(issue3.id)
     assert_equal [issue1.id, 1, 4], [issue1.root_id, issue1.lft, issue1.rgt]
     assert_equal [issue1.id, 2, 3], [issue4.root_id, issue4.lft, issue4.rgt]
+  end
+  
+  def test_destroy_child_should_update_parent
+    issue = create_issue!
+    child1 = create_issue!(:parent_issue_id => issue.id)
+    child2 = create_issue!(:parent_issue_id => issue.id)
+    
+    issue.reload
+    assert_equal [issue.id, 1, 6], [issue.root_id, issue.lft, issue.rgt]
+    
+    child2.reload.destroy
+    
+    issue.reload
+    assert_equal [issue.id, 1, 4], [issue.root_id, issue.lft, issue.rgt]
   end
 
   def test_destroy_parent_issue_updated_during_children_destroy

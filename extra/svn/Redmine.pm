@@ -208,7 +208,7 @@ sub access_handler {
   my $project_id = get_project_identifier($r);
 
   $r->set_handlers(PerlAuthenHandler => [\&OK])
-      if is_public_project($project_id, $r);
+      if is_public_project($project_id, $r) && anonymous_role_allows_browse_repository($r);
 
   return OK
 }
@@ -280,6 +280,29 @@ sub is_public_project {
     $ret;
 }
 
+sub anonymous_role_allows_browse_repository {
+  my $r = shift;
+  
+  my $dbh = connect_database($r);
+  my $sth = $dbh->prepare(
+      "SELECT permissions FROM roles WHERE builtin = 2;"
+  );
+  
+  $sth->execute();
+  my $ret = 0;
+  if (my @row = $sth->fetchrow_array) {
+    if ($row[0] =~ /:browse_repository/) {
+      $ret = 1;
+    }
+  }
+  $sth->finish();
+  undef $sth;
+  $dbh->disconnect();
+  undef $dbh;
+  
+  $ret;
+}
+
 # perhaps we should use repository right (other read right) to check public access.
 # it could be faster BUT it doesn't work for the moment.
 # sub is_public_project_by_file {
@@ -304,11 +327,13 @@ sub is_member {
   my $project_id  = get_project_identifier($r);
 
   my $pass_digest = Digest::SHA1::sha1_hex($redmine_pass);
+  
+  my $access_mode = defined $read_only_methods{$r->method} ? "R" : "W";
 
   my $cfg = Apache2::Module::get_config(__PACKAGE__, $r->server, $r->per_dir_config);
   my $usrprojpass;
   if ($cfg->{RedmineCacheCredsMax}) {
-    $usrprojpass = $cfg->{RedmineCacheCreds}->get($redmine_user.":".$project_id);
+    $usrprojpass = $cfg->{RedmineCacheCreds}->get($redmine_user.":".$project_id.":".$access_mode);
     return 1 if (defined $usrprojpass and ($usrprojpass eq $pass_digest));
   }
   my $query = $cfg->{RedmineQuery};
@@ -321,7 +346,7 @@ sub is_member {
       unless ($auth_source_id) {
 	  			my $method = $r->method;
           my $salted_password = Digest::SHA1::sha1_hex($salt.$pass_digest);
-					if ($hashed_password eq $salted_password && ((defined $read_only_methods{$method} && $permissions =~ /:browse_repository/) || $permissions =~ /:commit_access/) ) {
+					if ($hashed_password eq $salted_password && (($access_mode eq "R" && $permissions =~ /:browse_repository/) || $permissions =~ /:commit_access/) ) {
               $ret = 1;
               last;
           }
@@ -340,7 +365,7 @@ sub is_member {
                 filter  =>      "(".$rowldap[6]."=%s)"
             );
             my $method = $r->method;
-            $ret = 1 if ($ldap->authenticate($redmine_user, $redmine_pass) && ((defined $read_only_methods{$method} && $permissions =~ /:browse_repository/) || $permissions =~ /:commit_access/));
+            $ret = 1 if ($ldap->authenticate($redmine_user, $redmine_pass) && (($access_mode eq "R" && $permissions =~ /:browse_repository/) || $permissions =~ /:commit_access/));
 
           }
           $sthldap->finish();
@@ -354,10 +379,10 @@ sub is_member {
 
   if ($cfg->{RedmineCacheCredsMax} and $ret) {
     if (defined $usrprojpass) {
-      $cfg->{RedmineCacheCreds}->set($redmine_user.":".$project_id, $pass_digest);
+      $cfg->{RedmineCacheCreds}->set($redmine_user.":".$project_id.":".$access_mode, $pass_digest);
     } else {
       if ($cfg->{RedmineCacheCredsCount} < $cfg->{RedmineCacheCredsMax}) {
-        $cfg->{RedmineCacheCreds}->set($redmine_user.":".$project_id, $pass_digest);
+        $cfg->{RedmineCacheCreds}->set($redmine_user.":".$project_id.":".$access_mode, $pass_digest);
         $cfg->{RedmineCacheCredsCount}++;
       } else {
         $cfg->{RedmineCacheCreds}->clear();

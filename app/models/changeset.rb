@@ -22,6 +22,14 @@ class Changeset < ActiveRecord::Base
   belongs_to :user
   has_many :changes, :dependent => :delete_all
   has_and_belongs_to_many :issues
+  has_and_belongs_to_many :parents,
+                          :class_name => "Changeset",
+                          :join_table => "#{table_name_prefix}changeset_parents#{table_name_suffix}",
+                          :association_foreign_key => 'parent_id', :foreign_key => 'changeset_id'
+  has_and_belongs_to_many :children,
+                          :class_name => "Changeset",
+                          :join_table => "#{table_name_prefix}changeset_parents#{table_name_suffix}",
+                          :association_foreign_key => 'changeset_id', :foreign_key => 'parent_id'
 
   acts_as_event :title => Proc.new {|o| "#{l(:label_revision)} #{o.format_identifier}" + (o.short_comments.blank? ? '' : (': ' + o.short_comments))},
                 :description => :long_comments,
@@ -196,7 +204,7 @@ class Changeset < ActiveRecord::Base
   def fix_issue(issue)
     status = IssueStatus.find_by_id(Setting.commit_fix_status_id.to_i)
     if status.nil?
-      logger.warn("No status macthes commit_fix_status_id setting (#{Setting.commit_fix_status_id})") if logger
+      logger.warn("No status matches commit_fix_status_id setting (#{Setting.commit_fix_status_id})") if logger
       return issue
     end
 
@@ -256,46 +264,6 @@ class Changeset < ActiveRecord::Base
   end
 
   def self.to_utf8(str, encoding)
-    return str if str.nil?
-    str.force_encoding("ASCII-8BIT") if str.respond_to?(:force_encoding)
-    if str.empty?
-      str.force_encoding("UTF-8") if str.respond_to?(:force_encoding)
-      return str
-    end
-    enc = encoding.blank? ? "UTF-8" : encoding
-    if str.respond_to?(:force_encoding)
-      if enc.upcase != "UTF-8"
-        str.force_encoding(enc)
-        str = str.encode("UTF-8", :invalid => :replace,
-              :undef => :replace, :replace => '?')
-      else
-        str.force_encoding("UTF-8")
-        if ! str.valid_encoding?
-          str = str.encode("US-ASCII", :invalid => :replace,
-                :undef => :replace, :replace => '?').encode("UTF-8")
-        end
-      end
-    elsif RUBY_PLATFORM == 'java'
-      begin
-        ic = Iconv.new('UTF-8', enc)
-        str = ic.iconv(str)
-      rescue
-        str = str.gsub(%r{[^\r\n\t\x20-\x7e]}, '?')
-      end
-    else
-      ic = Iconv.new('UTF-8', enc)
-      txtar = ""
-      begin
-        txtar += ic.iconv(str)
-      rescue Iconv::IllegalSequence
-        txtar += $!.success
-        str = '?' + $!.failed[1,$!.failed.length]
-        retry
-      rescue
-        txtar += $!.success
-      end
-      str = txtar
-    end
-    str
+    Redmine::CodesetUtil.to_utf8(str, encoding)
   end
 end
