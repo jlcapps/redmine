@@ -1,5 +1,5 @@
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -18,7 +18,7 @@
 require File.expand_path('../../test_helper', __FILE__)
 
 class VersionTest < ActiveSupport::TestCase
-  fixtures :projects, :users, :issues, :issue_statuses, :trackers, :enumerations, :versions
+  fixtures :projects, :users, :issues, :issue_statuses, :trackers, :enumerations, :versions, :projects_trackers
 
   def setup
   end
@@ -32,15 +32,24 @@ class VersionTest < ActiveSupport::TestCase
 
   def test_invalid_effective_date_validation
     v = Version.new(:project => Project.find(1), :name => '1.1', :effective_date => '99999-01-01')
-    assert !v.save
-    assert_equal I18n.translate('activerecord.errors.messages.not_a_date'), v.errors.on(:effective_date)
+    assert !v.valid?
+    v.effective_date = '2012-11-33'
+    assert !v.valid?
+    v.effective_date = '2012-31-11'
+    assert !v.valid?
+    v.effective_date = '-2012-31-11'
+    assert !v.valid?
+    v.effective_date = 'ABC'
+    assert !v.valid?
+    assert_include I18n.translate('activerecord.errors.messages.not_a_date'),
+                   v.errors[:effective_date]
   end
 
   def test_progress_should_be_0_with_no_assigned_issues
     project = Project.find(1)
     v = Version.create!(:project => project, :name => 'Progress')
-    assert_equal 0, v.completed_pourcent
-    assert_equal 0, v.closed_pourcent
+    assert_equal 0, v.completed_percent
+    assert_equal 0, v.closed_percent
   end
 
   def test_progress_should_be_0_with_unbegun_assigned_issues
@@ -48,20 +57,20 @@ class VersionTest < ActiveSupport::TestCase
     v = Version.create!(:project => project, :name => 'Progress')
     add_issue(v)
     add_issue(v, :done_ratio => 0)
-    assert_progress_equal 0, v.completed_pourcent
-    assert_progress_equal 0, v.closed_pourcent
+    assert_progress_equal 0, v.completed_percent
+    assert_progress_equal 0, v.closed_percent
   end
 
   def test_progress_should_be_100_with_closed_assigned_issues
     project = Project.find(1)
-    status = IssueStatus.find(:first, :conditions => {:is_closed => true})
+    status = IssueStatus.where(:is_closed => true).first
     v = Version.create!(:project => project, :name => 'Progress')
     add_issue(v, :status => status)
     add_issue(v, :status => status, :done_ratio => 20)
     add_issue(v, :status => status, :done_ratio => 70, :estimated_hours => 25)
     add_issue(v, :status => status, :estimated_hours => 15)
-    assert_progress_equal 100.0, v.completed_pourcent
-    assert_progress_equal 100.0, v.closed_pourcent
+    assert_progress_equal 100.0, v.completed_percent
+    assert_progress_equal 100.0, v.closed_percent
   end
 
   def test_progress_should_consider_done_ratio_of_open_assigned_issues
@@ -70,8 +79,8 @@ class VersionTest < ActiveSupport::TestCase
     add_issue(v)
     add_issue(v, :done_ratio => 20)
     add_issue(v, :done_ratio => 70)
-    assert_progress_equal (0.0 + 20.0 + 70.0)/3, v.completed_pourcent
-    assert_progress_equal 0, v.closed_pourcent
+    assert_progress_equal (0.0 + 20.0 + 70.0)/3, v.completed_percent
+    assert_progress_equal 0, v.closed_percent
   end
 
   def test_progress_should_consider_closed_issues_as_completed
@@ -79,9 +88,9 @@ class VersionTest < ActiveSupport::TestCase
     v = Version.create!(:project => project, :name => 'Progress')
     add_issue(v)
     add_issue(v, :done_ratio => 20)
-    add_issue(v, :status => IssueStatus.find(:first, :conditions => {:is_closed => true}))
-    assert_progress_equal (0.0 + 20.0 + 100.0)/3, v.completed_pourcent
-    assert_progress_equal (100.0)/3, v.closed_pourcent
+    add_issue(v, :status => IssueStatus.where(:is_closed => true).first)
+    assert_progress_equal (0.0 + 20.0 + 100.0)/3, v.completed_percent
+    assert_progress_equal (100.0)/3, v.closed_percent
   end
 
   def test_progress_should_consider_estimated_hours_to_weigth_issues
@@ -90,29 +99,46 @@ class VersionTest < ActiveSupport::TestCase
     add_issue(v, :estimated_hours => 10)
     add_issue(v, :estimated_hours => 20, :done_ratio => 30)
     add_issue(v, :estimated_hours => 40, :done_ratio => 10)
-    add_issue(v, :estimated_hours => 25, :status => IssueStatus.find(:first, :conditions => {:is_closed => true}))
-    assert_progress_equal (10.0*0 + 20.0*0.3 + 40*0.1 + 25.0*1)/95.0*100, v.completed_pourcent
-    assert_progress_equal 25.0/95.0*100, v.closed_pourcent
+    add_issue(v, :estimated_hours => 25, :status => IssueStatus.where(:is_closed => true).first)
+    assert_progress_equal (10.0*0 + 20.0*0.3 + 40*0.1 + 25.0*1)/95.0*100, v.completed_percent
+    assert_progress_equal 25.0/95.0*100, v.closed_percent
   end
 
   def test_progress_should_consider_average_estimated_hours_to_weigth_unestimated_issues
     project = Project.find(1)
     v = Version.create!(:project => project, :name => 'Progress')
     add_issue(v, :done_ratio => 20)
-    add_issue(v, :status => IssueStatus.find(:first, :conditions => {:is_closed => true}))
+    add_issue(v, :status => IssueStatus.where(:is_closed => true).first)
     add_issue(v, :estimated_hours => 10, :done_ratio => 30)
     add_issue(v, :estimated_hours => 40, :done_ratio => 10)
-    assert_progress_equal (25.0*0.2 + 25.0*1 + 10.0*0.3 + 40.0*0.1)/100.0*100, v.completed_pourcent
-    assert_progress_equal 25.0/100.0*100, v.closed_pourcent
+    assert_progress_equal (25.0*0.2 + 25.0*1 + 10.0*0.3 + 40.0*0.1)/100.0*100, v.completed_percent
+    assert_progress_equal 25.0/100.0*100, v.closed_percent
+  end
+
+  def test_should_sort_scheduled_then_unscheduled_versions
+    Version.delete_all
+    v4 = Version.create!(:project_id => 1, :name => 'v4')
+    v3 = Version.create!(:project_id => 1, :name => 'v2', :effective_date => '2012-07-14')
+    v2 = Version.create!(:project_id => 1, :name => 'v1')
+    v1 = Version.create!(:project_id => 1, :name => 'v3', :effective_date => '2012-08-02')
+    v5 = Version.create!(:project_id => 1, :name => 'v5', :effective_date => '2012-07-02')
+
+    assert_equal [v5, v3, v1, v2, v4], [v1, v2, v3, v4, v5].sort
+    assert_equal [v5, v3, v1, v2, v4], Version.sorted.all
+  end
+
+  def test_completed_should_be_false_when_due_today
+    version = Version.create!(:project_id => 1, :effective_date => Date.today, :name => 'Due today')
+    assert_equal false, version.completed?
   end
 
   context "#behind_schedule?" do
     setup do
       ProjectCustomField.destroy_all # Custom values are a mess to isolate in tests
-      @project = Project.generate!(:identifier => 'test0')
-      @project.trackers << Tracker.generate!
+      @project = Project.create!(:name => 'test0', :identifier => 'test0')
+      @project.trackers << Tracker.create!(:name => 'track')
 
-      @version = Version.generate!(:project => @project, :effective_date => nil)
+      @version = Version.create!(:project => @project, :effective_date => nil, :name => 'version')
     end
 
     should "be false if there are no issues assigned" do
@@ -126,33 +152,26 @@ class VersionTest < ActiveSupport::TestCase
 
     should "be false if all of the issues are ahead of schedule" do
       @version.update_attribute(:effective_date, 7.days.from_now.to_date)
-      @version.fixed_issues = [
-                               Issue.generate_for_project!(@project, :start_date => 7.days.ago, :done_ratio => 60), # 14 day span, 60% done, 50% time left
-                               Issue.generate_for_project!(@project, :start_date => 7.days.ago, :done_ratio => 60) # 14 day span, 60% done, 50% time left
-                              ]
-      assert_equal 60, @version.completed_pourcent
+      add_issue(@version, :start_date => 7.days.ago, :done_ratio => 60) # 14 day span, 60% done, 50% time left
+      add_issue(@version, :start_date => 7.days.ago, :done_ratio => 60) # 14 day span, 60% done, 50% time left
+      assert_equal 60, @version.completed_percent
       assert_equal false, @version.behind_schedule?
     end
 
     should "be true if any of the issues are behind schedule" do
       @version.update_attribute(:effective_date, 7.days.from_now.to_date)
-      @version.fixed_issues = [
-                               Issue.generate_for_project!(@project, :start_date => 7.days.ago, :done_ratio => 60), # 14 day span, 60% done, 50% time left
-                               Issue.generate_for_project!(@project, :start_date => 7.days.ago, :done_ratio => 20) # 14 day span, 20% done, 50% time left
-                              ]
-      assert_equal 40, @version.completed_pourcent
+      add_issue(@version, :start_date => 7.days.ago, :done_ratio => 60) # 14 day span, 60% done, 50% time left
+      add_issue(@version, :start_date => 7.days.ago, :done_ratio => 20) # 14 day span, 20% done, 50% time left
+      assert_equal 40, @version.completed_percent
       assert_equal true, @version.behind_schedule?
     end
 
     should "be false if all of the issues are complete" do
       @version.update_attribute(:effective_date, 7.days.from_now.to_date)
-      @version.fixed_issues = [
-                               Issue.generate_for_project!(@project, :start_date => 14.days.ago, :done_ratio => 100, :status => IssueStatus.find(5)), # 7 day span
-                               Issue.generate_for_project!(@project, :start_date => 14.days.ago, :done_ratio => 100, :status => IssueStatus.find(5)) # 7 day span
-                              ]
-      assert_equal 100, @version.completed_pourcent
+      add_issue(@version, :start_date => 14.days.ago, :done_ratio => 100, :status => IssueStatus.find(5)) # 7 day span
+      add_issue(@version, :start_date => 14.days.ago, :done_ratio => 100, :status => IssueStatus.find(5)) # 7 day span
+      assert_equal 100, @version.completed_percent
       assert_equal false, @version.behind_schedule?
-
     end
   end
 
@@ -225,8 +244,8 @@ class VersionTest < ActiveSupport::TestCase
     Issue.create!({:project => version.project,
                    :fixed_version => version,
                    :subject => 'Test',
-                   :author => User.find(:first),
-                   :tracker => version.project.trackers.find(:first)}.merge(attributes))
+                   :author => User.first,
+                   :tracker => version.project.trackers.first}.merge(attributes))
   end
 
   def assert_progress_equal(expected_float, actual_float, message="")

@@ -1,5 +1,5 @@
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,10 +20,11 @@ require File.expand_path('../../../test_helper', __FILE__)
 class ApiTest::ProjectsTest < ActionController::IntegrationTest
   fixtures :projects, :versions, :users, :roles, :members, :member_roles, :issues, :journals, :journal_details,
            :trackers, :projects_trackers, :issue_statuses, :enabled_modules, :enumerations, :boards, :messages,
-           :attachments, :custom_fields, :custom_values, :time_entries
+           :attachments, :custom_fields, :custom_values, :time_entries, :issue_categories
 
   def setup
     Setting.rest_api_enabled = '1'
+    set_tmp_attachments_directory
   end
 
   context "GET /projects" do
@@ -68,6 +69,9 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
           :child => {:tag => 'id', :content => '1'}
         assert_tag :tag => 'custom_field',
           :attributes => {:name => 'Development status'}, :content => 'Stable'
+
+        assert_no_tag 'trackers'
+        assert_no_tag 'issue_categories'
       end
 
       context "with hidden custom fields" do
@@ -83,6 +87,38 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
           assert_no_tag 'custom_field',
             :attributes => {:name => 'Development status'}
         end
+      end
+
+      should "return categories with include=issue_categories" do
+        get '/projects/1.xml?include=issue_categories'
+        assert_response :success
+        assert_equal 'application/xml', @response.content_type
+
+        assert_tag 'issue_categories',
+          :attributes => {:type => 'array'},
+          :child => {
+            :tag => 'issue_category',
+            :attributes => {
+              :id => '2',
+              :name => 'Recipes'
+            }
+          }
+      end
+
+      should "return trackers with include=trackers" do
+        get '/projects/1.xml?include=trackers'
+        assert_response :success
+        assert_equal 'application/xml', @response.content_type
+
+        assert_tag 'trackers',
+          :attributes => {:type => 'array'},
+          :child => {
+            :tag => 'tracker',
+            :attributes => {
+              :id => '2',
+              :name => 'Feature request'
+            }
+          }
       end
     end
 
@@ -116,7 +152,7 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
 
         should "create a project with the attributes" do
           assert_difference('Project.count') do
-            post '/projects.xml', @parameters, :authorization => credentials('admin')
+            post '/projects.xml', @parameters, credentials('admin')
           end
 
           project = Project.first(:order => 'id DESC')
@@ -134,7 +170,7 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
           @parameters[:project].merge!({:enabled_module_names => ['issue_tracking', 'news', 'time_tracking']})
 
           assert_difference('Project.count') do
-            post '/projects.xml', @parameters, :authorization => credentials('admin')
+            post '/projects.xml', @parameters, credentials('admin')
           end
 
           project = Project.first(:order => 'id DESC')
@@ -145,7 +181,7 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
           @parameters[:project].merge!({:tracker_ids => [1, 3]})
 
           assert_difference('Project.count') do
-            post '/projects.xml', @parameters, :authorization => credentials('admin')
+            post '/projects.xml', @parameters, credentials('admin')
           end
 
           project = Project.first(:order => 'id DESC')
@@ -162,7 +198,7 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
       context ".xml" do
         should "return errors" do
           assert_no_difference('Project.count') do
-            post '/projects.xml', @parameters, :authorization => credentials('admin')
+            post '/projects.xml', @parameters, credentials('admin')
           end
 
           assert_response :unprocessable_entity
@@ -187,9 +223,10 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
 
         should "update the project" do
           assert_no_difference 'Project.count' do
-            put '/projects/2.xml', @parameters, :authorization => credentials('jsmith')
+            put '/projects/2.xml', @parameters, credentials('jsmith')
           end
           assert_response :ok
+          assert_equal '', @response.body
           assert_equal 'application/xml', @response.content_type
           project = Project.find(2)
           assert_equal 'API update', project.name
@@ -199,9 +236,10 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
           @parameters[:project].merge!({:enabled_module_names => ['issue_tracking', 'news', 'time_tracking']})
 
           assert_no_difference 'Project.count' do
-            put '/projects/2.xml', @parameters, :authorization => credentials('admin')
+            put '/projects/2.xml', @parameters, credentials('admin')
           end
           assert_response :ok
+          assert_equal '', @response.body
           project = Project.find(2)
           assert_equal ['issue_tracking', 'news', 'time_tracking'], project.enabled_module_names.sort
         end
@@ -210,9 +248,10 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
           @parameters[:project].merge!({:tracker_ids => [1, 3]})
 
           assert_no_difference 'Project.count' do
-            put '/projects/2.xml', @parameters, :authorization => credentials('admin')
+            put '/projects/2.xml', @parameters, credentials('admin')
           end
           assert_response :ok
+          assert_equal '', @response.body
           project = Project.find(2)
           assert_equal [1, 3], project.trackers.map(&:id).sort
         end
@@ -227,7 +266,7 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
       context ".xml" do
         should "return errors" do
           assert_no_difference('Project.count') do
-            put '/projects/2.xml', @parameters, :authorization => credentials('admin')
+            put '/projects/2.xml', @parameters, credentials('admin')
           end
 
           assert_response :unprocessable_entity
@@ -247,15 +286,12 @@ class ApiTest::ProjectsTest < ActionController::IntegrationTest
 
       should "delete the project" do
         assert_difference('Project.count',-1) do
-          delete '/projects/2.xml', {}, :authorization => credentials('admin')
+          delete '/projects/2.xml', {}, credentials('admin')
         end
         assert_response :ok
+        assert_equal '', @response.body
         assert_nil Project.find_by_id(2)
       end
     end
-  end
-
-  def credentials(user, password=nil)
-    ActionController::HttpAuthentication::Basic.encode_credentials(user, password || user)
   end
 end

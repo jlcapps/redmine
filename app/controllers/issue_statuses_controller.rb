@@ -1,5 +1,5 @@
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -18,14 +18,20 @@
 class IssueStatusesController < ApplicationController
   layout 'admin'
 
-  before_filter :require_admin
-
-  verify :method => :post, :only => [ :destroy, :create, :update, :move, :update_issue_done_ratio ],
-         :redirect_to => { :action => :index }
+  before_filter :require_admin, :except => :index
+  before_filter :require_admin_or_api_request, :only => :index
+  accept_api_auth :index
 
   def index
-    @issue_status_pages, @issue_statuses = paginate :issue_statuses, :per_page => 25, :order => "position"
-    render :action => "index", :layout => false if request.xhr?
+    respond_to do |format|
+      format.html {
+        @issue_status_pages, @issue_statuses = paginate IssueStatus.sorted, :per_page => 25
+        render :action => "index", :layout => false if request.xhr?
+      }
+      format.api {
+        @issue_statuses = IssueStatus.all(:order => 'position')
+      }
+    end
   end
 
   def new
@@ -34,9 +40,9 @@ class IssueStatusesController < ApplicationController
 
   def create
     @issue_status = IssueStatus.new(params[:issue_status])
-    if @issue_status.save
+    if request.post? && @issue_status.save
       flash[:notice] = l(:notice_successful_create)
-      redirect_to :action => 'index'
+      redirect_to issue_statuses_path
     else
       render :action => 'new'
     end
@@ -48,9 +54,9 @@ class IssueStatusesController < ApplicationController
 
   def update
     @issue_status = IssueStatus.find(params[:id])
-    if @issue_status.update_attributes(params[:issue_status])
+    if request.put? && @issue_status.update_attributes(params[:issue_status])
       flash[:notice] = l(:notice_successful_update)
-      redirect_to :action => 'index'
+      redirect_to issue_statuses_path
     else
       render :action => 'edit'
     end
@@ -58,18 +64,18 @@ class IssueStatusesController < ApplicationController
 
   def destroy
     IssueStatus.find(params[:id]).destroy
-    redirect_to :action => 'index'
+    redirect_to issue_statuses_path
   rescue
     flash[:error] = l(:error_unable_delete_issue_status)
-    redirect_to :action => 'index'
+    redirect_to issue_statuses_path
   end  	
 
   def update_issue_done_ratio
-    if IssueStatus.update_issue_done_ratios
+    if request.post? && IssueStatus.update_issue_done_ratios
       flash[:notice] = l(:notice_issue_done_ratios_updated)
     else
       flash[:error] =  l(:error_issue_done_ratios_not_updated)
     end
-    redirect_to :action => 'index'
+    redirect_to issue_statuses_path
   end
 end

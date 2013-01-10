@@ -1,5 +1,5 @@
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -19,46 +19,61 @@ class CustomFieldsController < ApplicationController
   layout 'admin'
 
   before_filter :require_admin
+  before_filter :build_new_custom_field, :only => [:new, :create]
+  before_filter :find_custom_field, :only => [:edit, :update, :destroy]
 
   def index
-    @custom_fields_by_type = CustomField.find(:all).group_by {|f| f.class.name }
+    @custom_fields_by_type = CustomField.all.group_by {|f| f.class.name }
     @tab = params[:tab] || 'IssueCustomField'
   end
 
   def new
-    @custom_field = begin
-      if params[:type].to_s.match(/.+CustomField$/)
-        params[:type].to_s.constantize.new(params[:custom_field])
-      end
-    rescue
-    end
-    (redirect_to(:action => 'index'); return) unless @custom_field.is_a?(CustomField)
+  end
 
-    if request.post? and @custom_field.save
+  def create
+    if @custom_field.save
       flash[:notice] = l(:notice_successful_create)
       call_hook(:controller_custom_fields_new_after_save, :params => params, :custom_field => @custom_field)
-      redirect_to :action => 'index', :tab => @custom_field.class.name
+      redirect_to custom_fields_path(:tab => @custom_field.class.name)
     else
-      @trackers = Tracker.find(:all, :order => 'position')
+      render :action => 'new'
     end
   end
 
   def edit
-    @custom_field = CustomField.find(params[:id])
-    if request.post? and @custom_field.update_attributes(params[:custom_field])
+  end
+
+  def update
+    if @custom_field.update_attributes(params[:custom_field])
       flash[:notice] = l(:notice_successful_update)
       call_hook(:controller_custom_fields_edit_after_save, :params => params, :custom_field => @custom_field)
-      redirect_to :action => 'index', :tab => @custom_field.class.name
+      redirect_to custom_fields_path(:tab => @custom_field.class.name)
     else
-      @trackers = Tracker.find(:all, :order => 'position')
+      render :action => 'edit'
     end
   end
 
   def destroy
-    @custom_field = CustomField.find(params[:id]).destroy
-    redirect_to :action => 'index', :tab => @custom_field.class.name
-  rescue
-    flash[:error] = l(:error_can_not_delete_custom_field)
-    redirect_to :action => 'index'
+    begin
+      @custom_field.destroy
+    rescue
+      flash[:error] = l(:error_can_not_delete_custom_field)
+    end
+    redirect_to custom_fields_path(:tab => @custom_field.class.name)
+  end
+
+  private
+
+  def build_new_custom_field
+    @custom_field = CustomField.new_subclass_instance(params[:type], params[:custom_field])
+    if @custom_field.nil?
+      render_404
+    end
+  end
+
+  def find_custom_field
+    @custom_field = CustomField.find(params[:id])
+  rescue ActiveRecord::RecordNotFound
+    render_404
   end
 end

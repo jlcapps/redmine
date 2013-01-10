@@ -1,5 +1,5 @@
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -19,6 +19,8 @@ require File.expand_path('../../../../../test_helper', __FILE__)
 require 'iconv'
 
 class PdfTest < ActiveSupport::TestCase
+  fixtures :users, :projects, :roles, :members, :member_roles,
+           :enabled_modules, :issues, :trackers, :attachments
 
   def test_fix_text_encoding_nil
     assert_equal '', Redmine::Export::PDF::RDMPdfEncoding::rdm_from_utf8(nil, "UTF-8")
@@ -86,5 +88,42 @@ class PdfTest < ActiveSupport::TestCase
     end
     assert_equal "Texte encod? en ISO-8859-1", txt_1
     assert_equal "?a?b?c?d?e test", txt_2
+  end
+
+  def test_attach
+    set_fixtures_attachments_directory
+
+    str2 = "\x83e\x83X\x83g"
+    str2.force_encoding("ASCII-8BIT") if str2.respond_to?(:force_encoding)
+    encoding = ( RUBY_PLATFORM == 'java' ? "SJIS" : "CP932" )
+
+    a1 = Attachment.find(17)
+    a2 = Attachment.find(19)
+
+    User.current = User.find(1)
+    assert a1.readable?
+    assert a1.visible?
+    assert a2.readable?
+    assert a2.visible?
+
+    aa1 = Redmine::Export::PDF::RDMPdfEncoding::attach(Attachment.all, "Testfile.PNG", "UTF-8")
+    assert_not_nil aa1
+    assert_equal 17, aa1.id
+    aa2 = Redmine::Export::PDF::RDMPdfEncoding::attach(Attachment.all, "test#{str2}.png", encoding)
+    assert_not_nil aa2
+    assert_equal 19, aa2.id
+
+    User.current = nil
+    assert a1.readable?
+    assert (! a1.visible?)
+    assert a2.readable?
+    assert (! a2.visible?)
+
+    aa1 = Redmine::Export::PDF::RDMPdfEncoding::attach(Attachment.all, "Testfile.PNG", "UTF-8")
+    assert_equal nil, aa1
+    aa2 = Redmine::Export::PDF::RDMPdfEncoding::attach(Attachment.all, "test#{str2}.png", encoding)
+    assert_equal nil, aa2
+
+    set_tmp_attachments_directory
   end
 end

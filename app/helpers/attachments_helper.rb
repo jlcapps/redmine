@@ -1,5 +1,7 @@
+# encoding: utf-8
+#
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -19,28 +21,14 @@ module AttachmentsHelper
   # Displays view/delete links to the attachments of the given object
   # Options:
   #   :author -- author names are not displayed if set to false
+  #   :thumbails -- display thumbnails if enabled in settings
   def link_to_attachments(container, options = {})
-    options.assert_valid_keys(:author)
+    options.assert_valid_keys(:author, :thumbnails)
 
     if container.attachments.any?
       options = {:deletable => container.attachments_deletable?, :author => true}.merge(options)
-      render :partial => 'attachments/links', :locals => {:attachments => container.attachments, :options => options}
-    end
-  end
-
-  def to_utf8(str)
-    if str.respond_to?(:force_encoding)
-      str.force_encoding('UTF-8')
-      return str if str.valid_encoding?
-    else
-      return str if /\A[\r\n\t\x20-\x7e]*\Z/n.match(str) # for us-ascii
-    end
-
-    begin
-      Iconv.conv('UTF-8//IGNORE', 'UTF-8', str + '  ')[0..-3]
-    rescue Iconv::InvalidEncoding
-      # "UTF-8//IGNORE" is not supported on some OS
-      str
+      render :partial => 'attachments/links',
+        :locals => {:attachments => container.attachments, :options => options, :thumbnails => (options[:thumbnails] && Setting.thumbnails_enabled?)}
     end
   end
 

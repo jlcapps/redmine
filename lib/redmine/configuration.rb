@@ -1,5 +1,5 @@
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,7 +20,8 @@ module Redmine
 
     # Configuration default values
     @defaults = {
-      'email_delivery' => nil
+      'email_delivery' => nil,
+      'max_concurrent_ajax_uploads' => 2
     }
 
     @config = nil
@@ -79,7 +80,13 @@ module Redmine
       private
 
       def load_from_yaml(filename, env)
-        yaml = YAML::load_file(filename)
+        yaml = nil
+        begin
+          yaml = YAML::load_file(filename)
+        rescue ArgumentError
+          $stderr.puts "Your Redmine configuration file located at #{filename} is not a valid YAML file and could not be loaded."
+          exit 1
+        end
         conf = {}
         if yaml.is_a?(Hash)
           if yaml['default']
@@ -89,7 +96,7 @@ module Redmine
             conf.merge!(yaml[env])
           end
         else
-          $stderr.puts "#{filename} is not a valid Redmine configuration file"
+          $stderr.puts "Your Redmine configuration file located at #{filename} is not a valid Redmine configuration file."
           exit 1
         end
         conf

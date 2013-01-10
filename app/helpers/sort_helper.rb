@@ -1,3 +1,5 @@
+# encoding: utf-8
+#
 # Helpers to sort tables using clickable column headers.
 #
 # Author:  Stuart Rackham <srackham@methods.co.nz>, March 2005.
@@ -78,13 +80,18 @@ module SortHelper
       @criteria.collect {|k,o| k + (o ? '' : ':desc')}.join(',')
     end
 
+    # Returns an array of SQL fragments used to sort the list
     def to_sql
       sql = @criteria.collect do |k,o|
         if s = @available_criteria[k]
-          (o ? s.to_a : s.to_a.collect {|c| append_desc(c)}).join(', ')
+          (o ? s.to_a : s.to_a.collect {|c| append_desc(c)})
         end
-      end.compact.join(', ')
+      end.flatten.compact
       sql.blank? ? nil : sql
+    end
+
+    def to_a
+      @criteria.dup
     end
 
     def add!(key, asc)
@@ -158,7 +165,8 @@ module SortHelper
   # sort_clause.
   # - criteria can be either an array or a hash of allowed keys
   #
-  def sort_update(criteria)
+  def sort_update(criteria, sort_name=nil)
+    sort_name ||= self.sort_name
     @sort_criteria = SortCriteria.new
     @sort_criteria.available_criteria = criteria
     @sort_criteria.from_param(params[:sort] || session[sort_name])
@@ -177,6 +185,10 @@ module SortHelper
   #
   def sort_clause()
     @sort_criteria.to_sql
+  end
+
+  def sort_criteria
+    @sort_criteria
   end
 
   # Returns a link which sorts by the named column.

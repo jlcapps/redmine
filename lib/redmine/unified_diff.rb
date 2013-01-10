@@ -1,5 +1,5 @@
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -18,15 +18,16 @@
 module Redmine
   # Class used to parse unified diffs
   class UnifiedDiff < Array
-    attr_reader :diff_type
+    attr_reader :diff_type, :diff_style
 
     def initialize(diff, options={})
-      options.assert_valid_keys(:type, :max_lines)
+      options.assert_valid_keys(:type, :style, :max_lines)
       diff = diff.split("\n") if diff.is_a?(String)
       @diff_type = options[:type] || 'inline'
+      @diff_style = options[:style]
       lines = 0
       @truncated = false
-      diff_table = DiffTable.new(@diff_type)
+      diff_table = DiffTable.new(diff_type, diff_style)
       diff.each do |line|
         line_encoding = nil
         if line.respond_to?(:force_encoding)
@@ -39,7 +40,7 @@ module Redmine
         unless diff_table.add_line line
           line.force_encoding(line_encoding) if line_encoding
           self << diff_table if diff_table.length > 0
-          diff_table = DiffTable.new(diff_type)
+          diff_table = DiffTable.new(diff_type, diff_style)
         end
         lines += 1
         if options[:max_lines] && lines > options[:max_lines]
@@ -60,11 +61,14 @@ module Redmine
 
     # Initialize with a Diff file and the type of Diff View
     # The type view must be inline or sbs (side_by_side)
-    def initialize(type="inline")
+    def initialize(type="inline", style=nil)
       @parsing = false
       @added = 0
       @removed = 0
       @type = type
+      @style = style
+      @file_name = nil
+      @git_diff = false
     end
 
     # Function for add a line of this Diff
@@ -72,7 +76,7 @@ module Redmine
     def add_line(line)
       unless @parsing
         if line =~ /^(---|\+\+\+) (.*)$/
-          @file_name = $2
+          self.file_name = $2
         elsif line =~ /^@@ (\+|\-)(\d+)(,\d+)? (\+|\-)(\d+)(,\d+)? @@/
           @line_num_l = $2.to_i
           @line_num_r = $5.to_i
@@ -112,9 +116,27 @@ module Redmine
 
     private
 
-    # Escape the HTML for the diff
-    def escapeHTML(line)
-        CGI.escapeHTML(line)
+    def file_name=(arg)
+      both_git_diff = false
+      if file_name.nil?
+        @git_diff = true if arg =~ %r{^(a/|/dev/null)}
+      else
+        both_git_diff = (@git_diff && arg =~ %r{^(b/|/dev/null)})
+      end
+      if both_git_diff
+        if file_name && arg == "/dev/null"
+          # keep the original file name
+          @file_name = file_name.sub(%r{^a/}, '')
+        else
+          # remove leading b/
+          @file_name = arg.sub(%r{^b/}, '')
+        end
+      elsif @style == "Subversion"
+        # removing trailing "(revision nn)"
+        @file_name = arg.sub(%r{\t+\(.*\)$}, '')
+      else
+        @file_name = arg
+      end
     end
 
     def diff_for_added_line
@@ -130,7 +152,7 @@ module Redmine
     def parse_line(line, type="inline")
       if line[0, 1] == "+"
         diff = diff_for_added_line
-        diff.line_right = escapeHTML line[1..-1]
+        diff.line_right = line[1..-1]
         diff.nb_line_right = @line_num_r
         diff.type_diff_right = 'diff_in'
         @line_num_r += 1
@@ -138,7 +160,7 @@ module Redmine
         true
       elsif line[0, 1] == "-"
         diff = Diff.new
-        diff.line_left = escapeHTML line[1..-1]
+        diff.line_left = line[1..-1]
         diff.nb_line_left = @line_num_l
         diff.type_diff_left = 'diff_out'
         self << diff
@@ -149,9 +171,9 @@ module Redmine
         write_offsets
         if line[0, 1] =~ /\s/
           diff = Diff.new
-          diff.line_right = escapeHTML line[1..-1]
+          diff.line_right = line[1..-1]
           diff.nb_line_right = @line_num_r
-          diff.line_left = escapeHTML line[1..-1]
+          diff.line_left = line[1..-1]
           diff.nb_line_left = @line_num_l
           self << diff
           @line_num_l += 1
@@ -224,27 +246,15 @@ module Redmine
     end
 
     def html_line_left
-      if offsets
-        line_left.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>')
-      else
-        line_left
-      end
+      line_to_html(line_left, offsets)
     end
 
     def html_line_right
-      if offsets
-        line_right.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>')
-      else
-        line_right
-      end
+      line_to_html(line_right, offsets)
     end
 
     def html_line
-      if offsets
-        line.dup.insert(offsets.first, '<span>').insert(offsets.last, '</span>')
-      else
-        line
-      end
+      line_to_html(line, offsets)
     end
 
     def inspect
@@ -253,6 +263,24 @@ module Redmine
       puts self.line_left
       puts self.nb_line_right
       puts self.line_right
+    end
+
+    private
+
+    def line_to_html(line, offsets)
+      if offsets
+        s = ''
+        unless offsets.first == 0
+          s << CGI.escapeHTML(line[0..offsets.first-1])
+        end
+        s << '<span>' + CGI.escapeHTML(line[offsets.first..offsets.last]) + '</span>'
+        unless offsets.last == -1
+          s << CGI.escapeHTML(line[offsets.last+1..-1])
+        end
+        s
+      else
+        CGI.escapeHTML(line)
+      end
     end
   end
 end

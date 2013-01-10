@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Redmine - project management software
-# Copyright (C) 2006-2011  Jean-Philippe Lang
+# Copyright (C) 2006-2012  Jean-Philippe Lang
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -17,10 +17,6 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 require File.expand_path('../../test_helper', __FILE__)
-require 'timelog_controller'
-
-# Re-raise errors caught by the controller.
-class TimelogController; def rescue_action(e) raise e end; end
 
 class TimelogControllerTest < ActionController::TestCase
   fixtures :projects, :enabled_modules, :roles, :members,
@@ -28,28 +24,68 @@ class TimelogControllerTest < ActionController::TestCase
            :trackers, :enumerations, :issue_statuses,
            :custom_fields, :custom_values
 
-  def setup
-    @controller = TimelogController.new
-    @request    = ActionController::TestRequest.new
-    @response   = ActionController::TestResponse.new
-  end
+  include Redmine::I18n
 
-  def test_get_new
+  def test_new_with_project_id
     @request.session[:user_id] = 3
     get :new, :project_id => 1
     assert_response :success
-    assert_template 'edit'
-    # Default activity selected
-    assert_tag :tag => 'option', :attributes => { :selected => 'selected' },
-                                 :content => 'Development'
+    assert_template 'new'
+    assert_select 'select[name=?]', 'time_entry[project_id]', 0
+    assert_select 'input[name=?][value=1][type=hidden]', 'time_entry[project_id]'
   end
 
-  def test_get_new_should_only_show_active_time_entry_activities
+  def test_new_with_issue_id
+    @request.session[:user_id] = 3
+    get :new, :issue_id => 2
+    assert_response :success
+    assert_template 'new'
+    assert_select 'select[name=?]', 'time_entry[project_id]', 0
+    assert_select 'input[name=?][value=1][type=hidden]', 'time_entry[project_id]'
+  end
+
+  def test_new_without_project
+    @request.session[:user_id] = 3
+    get :new
+    assert_response :success
+    assert_template 'new'
+    assert_select 'select[name=?]', 'time_entry[project_id]'
+    assert_select 'input[name=?]', 'time_entry[project_id]', 0
+  end
+
+  def test_new_without_project_should_prefill_the_form
+    @request.session[:user_id] = 3
+    get :new, :time_entry => {:project_id => '1'}
+    assert_response :success
+    assert_template 'new'
+    assert_select 'select[name=?]', 'time_entry[project_id]' do
+      assert_select 'option[value=1][selected=selected]'
+    end
+    assert_select 'input[name=?]', 'time_entry[project_id]', 0
+  end
+
+  def test_new_without_project_should_deny_without_permission
+    Role.all.each {|role| role.remove_permission! :log_time}
+    @request.session[:user_id] = 3
+
+    get :new
+    assert_response 403
+  end
+
+  def test_new_should_select_default_activity
     @request.session[:user_id] = 3
     get :new, :project_id => 1
     assert_response :success
-    assert_template 'edit'
-    assert_no_tag :tag => 'option', :content => 'Inactive Activity'
+    assert_select 'select[name=?]', 'time_entry[activity_id]' do
+      assert_select 'option[selected=selected]', :text => 'Development'
+    end
+  end
+
+  def test_new_should_only_show_active_time_entry_activities
+    @request.session[:user_id] = 3
+    get :new, :project_id => 1
+    assert_response :success
+    assert_no_tag 'option', :content => 'Inactive Activity'
   end
 
   def test_get_edit_existing_time
@@ -117,6 +153,123 @@ class TimelogControllerTest < ActionController::TestCase
     assert_equal 3, t.user_id
   end
 
+  def test_create_and_continue
+    @request.session[:user_id] = 2
+    post :create, :project_id => 1,
+                :time_entry => {:activity_id => '11',
+                                :issue_id => '',
+                                :spent_on => '2008-03-14',
+                                :hours => '7.3'},
+                :continue => '1'
+    assert_redirected_to '/projects/ecookbook/time_entries/new?time_entry%5Bactivity_id%5D=11&time_entry%5Bissue_id%5D='
+  end
+
+  def test_create_and_continue_with_issue_id
+    @request.session[:user_id] = 2
+    post :create, :project_id => 1,
+                :time_entry => {:activity_id => '11',
+                                :issue_id => '1',
+                                :spent_on => '2008-03-14',
+                                :hours => '7.3'},
+                :continue => '1'
+    assert_redirected_to '/projects/ecookbook/issues/1/time_entries/new?time_entry%5Bactivity_id%5D=11&time_entry%5Bissue_id%5D=1'
+  end
+
+  def test_create_and_continue_without_project
+    @request.session[:user_id] = 2
+    post :create, :time_entry => {:project_id => '1',
+                                :activity_id => '11',
+                                :issue_id => '',
+                                :spent_on => '2008-03-14',
+                                :hours => '7.3'},
+                  :continue => '1'
+
+    assert_redirected_to '/time_entries/new?time_entry%5Bactivity_id%5D=11&time_entry%5Bissue_id%5D=&time_entry%5Bproject_id%5D=1'
+  end
+
+  def test_create_without_log_time_permission_should_be_denied
+    @request.session[:user_id] = 2
+    Role.find_by_name('Manager').remove_permission! :log_time
+    post :create, :project_id => 1,
+                :time_entry => {:activity_id => '11',
+                                :issue_id => '',
+                                :spent_on => '2008-03-14',
+                                :hours => '7.3'}
+
+    assert_response 403
+  end
+
+  def test_create_with_failure
+    @request.session[:user_id] = 2
+    post :create, :project_id => 1,
+                :time_entry => {:activity_id => '',
+                                :issue_id => '',
+                                :spent_on => '2008-03-14',
+                                :hours => '7.3'}
+
+    assert_response :success
+    assert_template 'new'
+  end
+
+  def test_create_without_project
+    @request.session[:user_id] = 2
+    assert_difference 'TimeEntry.count' do
+      post :create, :time_entry => {:project_id => '1',
+                                  :activity_id => '11',
+                                  :issue_id => '',
+                                  :spent_on => '2008-03-14',
+                                  :hours => '7.3'}
+    end
+
+    assert_redirected_to '/projects/ecookbook/time_entries'
+    time_entry = TimeEntry.first(:order => 'id DESC')
+    assert_equal 1, time_entry.project_id
+  end
+
+  def test_create_without_project_should_fail_with_issue_not_inside_project
+    @request.session[:user_id] = 2
+    assert_no_difference 'TimeEntry.count' do
+      post :create, :time_entry => {:project_id => '1',
+                                  :activity_id => '11',
+                                  :issue_id => '5',
+                                  :spent_on => '2008-03-14',
+                                  :hours => '7.3'}
+    end
+
+    assert_response :success
+    assert assigns(:time_entry).errors[:issue_id].present?
+  end
+
+  def test_create_without_project_should_deny_without_permission
+    @request.session[:user_id] = 2
+    Project.find(3).disable_module!(:time_tracking)
+
+    assert_no_difference 'TimeEntry.count' do
+      post :create, :time_entry => {:project_id => '3',
+                                  :activity_id => '11',
+                                  :issue_id => '',
+                                  :spent_on => '2008-03-14',
+                                  :hours => '7.3'}
+    end
+
+    assert_response 403
+  end
+
+  def test_create_without_project_with_failure
+    @request.session[:user_id] = 2
+    assert_no_difference 'TimeEntry.count' do
+      post :create, :time_entry => {:project_id => '1',
+                                  :activity_id => '11',
+                                  :issue_id => '',
+                                  :spent_on => '2008-03-14',
+                                  :hours => ''}
+    end
+
+    assert_response :success
+    assert_tag 'select', :attributes => {:name => 'time_entry[project_id]'},
+      :child => {:tag => 'option', :attributes => {:value => '1', :selected => 'selected'}}
+  end
+
   def test_update
     entry = TimeEntry.find(1)
     assert_equal 1, entry.issue_id
@@ -140,8 +293,21 @@ class TimelogControllerTest < ActionController::TestCase
     assert_response :success
     assert_template 'bulk_edit'
 
-    # System wide custom field
-    assert_tag :select, :attributes => {:name => 'time_entry[custom_field_values][10]'}
+    assert_select 'ul#bulk-selection' do
+      assert_select 'li', 2
+      assert_select 'li a', :text => '03/23/2007 - eCookbook: 4.25 hours'
+    end
+
+    assert_select 'form#bulk_edit_form[action=?]', '/time_entries/bulk_update' do
+      # System wide custom field
+      assert_select 'select[name=?]', 'time_entry[custom_field_values][10]'
+  
+      # Activities
+      assert_select 'select[name=?]', 'time_entry[activity_id]' do
+        assert_select 'option[value=]', :text => '(No change)'
+        assert_select 'option[value=9]', :text => 'Design'
+      end
+    end
   end
 
   def test_get_bulk_edit_on_different_projects
@@ -161,8 +327,19 @@ class TimelogControllerTest < ActionController::TestCase
     assert_equal [9, 9], TimeEntry.find_all_by_id([1, 2]).collect {|i| i.activity_id}
   end
 
+  def test_bulk_update_with_failure
+    @request.session[:user_id] = 2
+    post :bulk_update, :ids => [1, 2], :time_entry => { :hours => 'A'}
+
+    assert_response 302
+    assert_match /Failed to save 2 time entrie/, flash[:error]
+  end
+
   def test_bulk_update_on_different_projects
     @request.session[:user_id] = 2
+    # makes user a manager on the other project
+    Member.create!(:user_id => 2, :project_id => 3, :role_ids => [1])
+    
     # update time entry activity
     post :bulk_update, :ids => [1, 2, 4], :time_entry => { :activity_id => 9 }
 
@@ -205,6 +382,14 @@ class TimelogControllerTest < ActionController::TestCase
     assert_redirected_to :controller => 'timelog', :action => 'index', :project_id => Project.find(1).identifier
   end
 
+  def test_post_bulk_update_without_edit_permission_should_be_denied
+    @request.session[:user_id] = 2
+    Role.find_by_name('Manager').remove_permission! :edit_time_entries
+    post :bulk_update, :ids => [1,2]
+
+    assert_response 403
+  end
+
   def test_destroy
     @request.session[:user_id] = 2
     delete :destroy, :id => 1
@@ -234,6 +419,14 @@ class TimelogControllerTest < ActionController::TestCase
       :attributes => {:action => "/time_entries", :id => 'query_form'}
   end
 
+  def test_index_all_projects_should_show_log_time_link
+    @request.session[:user_id] = 2
+    get :index
+    assert_response :success
+    assert_template 'index'
+    assert_tag 'a', :attributes => {:href => '/time_entries/new'}, :content => /Log time/
+  end
+
   def test_index_at_project_level
     get :index, :project_id => 'ecookbook'
     assert_response :success
@@ -244,14 +437,26 @@ class TimelogControllerTest < ActionController::TestCase
     assert_equal [1, 3], assigns(:entries).collect(&:project_id).uniq.sort
     assert_not_nil assigns(:total_hours)
     assert_equal "162.90", "%.2f" % assigns(:total_hours)
-    # display all time by default
-    assert_equal '2007-03-12'.to_date, assigns(:from)
-    assert_equal '2007-04-22'.to_date, assigns(:to)
     assert_tag :form,
       :attributes => {:action => "/projects/ecookbook/time_entries", :id => 'query_form'}
   end
 
   def test_index_at_project_level_with_date_range
+    get :index, :project_id => 'ecookbook',
+      :f => ['spent_on'],
+      :op => {'spent_on' => '><'},
+      :v => {'spent_on' => ['2007-03-20', '2007-04-30']}
+    assert_response :success
+    assert_template 'index'
+    assert_not_nil assigns(:entries)
+    assert_equal 3, assigns(:entries).size
+    assert_not_nil assigns(:total_hours)
+    assert_equal "12.90", "%.2f" % assigns(:total_hours)
+    assert_tag :form,
+      :attributes => {:action => "/projects/ecookbook/time_entries", :id => 'query_form'}
+  end
+
+  def test_index_at_project_level_with_date_range_using_from_and_to_params
     get :index, :project_id => 'ecookbook', :from => '2007-03-20', :to => '2007-04-30'
     assert_response :success
     assert_template 'index'
@@ -259,30 +464,19 @@ class TimelogControllerTest < ActionController::TestCase
     assert_equal 3, assigns(:entries).size
     assert_not_nil assigns(:total_hours)
     assert_equal "12.90", "%.2f" % assigns(:total_hours)
-    assert_equal '2007-03-20'.to_date, assigns(:from)
-    assert_equal '2007-04-30'.to_date, assigns(:to)
     assert_tag :form,
       :attributes => {:action => "/projects/ecookbook/time_entries", :id => 'query_form'}
   end
 
   def test_index_at_project_level_with_period
-    get :index, :project_id => 'ecookbook', :period => '7_days'
+    get :index, :project_id => 'ecookbook',
+      :f => ['spent_on'],
+      :op => {'spent_on' => '>t-'},
+      :v => {'spent_on' => ['7']}
     assert_response :success
     assert_template 'index'
     assert_not_nil assigns(:entries)
     assert_not_nil assigns(:total_hours)
-    assert_equal Date.today - 7, assigns(:from)
-    assert_equal Date.today, assigns(:to)
-    assert_tag :form,
-      :attributes => {:action => "/projects/ecookbook/time_entries", :id => 'query_form'}
-  end
-
-  def test_index_one_day
-    get :index, :project_id => 'ecookbook', :from => "2007-03-23", :to => "2007-03-23"
-    assert_response :success
-    assert_template 'index'
-    assert_not_nil assigns(:total_hours)
-    assert_equal "4.25", "%.2f" % assigns(:total_hours)
     assert_tag :form,
       :attributes => {:action => "/projects/ecookbook/time_entries", :id => 'query_form'}
   end
@@ -295,13 +489,34 @@ class TimelogControllerTest < ActionController::TestCase
     assert_equal 2, assigns(:entries).size
     assert_not_nil assigns(:total_hours)
     assert_equal 154.25, assigns(:total_hours)
-    # display all time based on what's been logged
-    assert_equal '2007-03-12'.to_date, assigns(:from)
-    assert_equal '2007-04-22'.to_date, assigns(:to)
+    # display all time
+    assert_nil assigns(:from)
+    assert_nil assigns(:to)
     # TODO: remove /projects/:project_id/issues/:issue_id/time_entries routes
     # to use /issues/:issue_id/time_entries
     assert_tag :form,
       :attributes => {:action => "/projects/ecookbook/issues/1/time_entries", :id => 'query_form'}
+  end
+
+  def test_index_should_sort_by_spent_on_and_created_on
+    t1 = TimeEntry.create!(:user => User.find(1), :project => Project.find(1), :hours => 1, :spent_on => '2012-06-16', :created_on => '2012-06-16 20:00:00', :activity_id => 10)
+    t2 = TimeEntry.create!(:user => User.find(1), :project => Project.find(1), :hours => 1, :spent_on => '2012-06-16', :created_on => '2012-06-16 20:05:00', :activity_id => 10)
+    t3 = TimeEntry.create!(:user => User.find(1), :project => Project.find(1), :hours => 1, :spent_on => '2012-06-15', :created_on => '2012-06-16 20:10:00', :activity_id => 10)
+
+    get :index, :project_id => 1,
+      :f => ['spent_on'],
+      :op => {'spent_on' => '><'},
+      :v => {'spent_on' => ['2012-06-15', '2012-06-16']}
+    assert_response :success
+    assert_equal [t2, t1, t3], assigns(:entries)
+
+    get :index, :project_id => 1,
+      :f => ['spent_on'],
+      :op => {'spent_on' => '><'},
+      :v => {'spent_on' => ['2012-06-15', '2012-06-16']},
+      :sort => 'spent_on'
+    assert_response :success
+    assert_equal [t3, t1, t2], assigns(:entries)
   end
 
   def test_index_atom_feed
@@ -316,7 +531,7 @@ class TimelogControllerTest < ActionController::TestCase
     Setting.date_format = '%m/%d/%Y'
     get :index, :format => 'csv'
     assert_response :success
-    assert_equal 'text/csv', @response.content_type
+    assert_equal 'text/csv; header=present', @response.content_type
     assert @response.body.include?("Date,User,Activity,Project,Issue,Tracker,Subject,Hours,Comment,Overtime\n")
     assert @response.body.include?("\n04/21/2007,redMine Admin,Design,eCookbook,3,Bug,Error 281 when updating a recipe,1.0,\"\",\"\"\n")
   end
@@ -325,9 +540,21 @@ class TimelogControllerTest < ActionController::TestCase
     Setting.date_format = '%m/%d/%Y'
     get :index, :project_id => 1, :format => 'csv'
     assert_response :success
-    assert_equal 'text/csv', @response.content_type
+    assert_equal 'text/csv; header=present', @response.content_type
     assert @response.body.include?("Date,User,Activity,Project,Issue,Tracker,Subject,Hours,Comment,Overtime\n")
     assert @response.body.include?("\n04/21/2007,redMine Admin,Design,eCookbook,3,Bug,Error 281 when updating a recipe,1.0,\"\",\"\"\n")
+  end
+
+  def test_index_csv_export_with_multi_custom_field
+    field = TimeEntryCustomField.create!(:name => 'Test', :field_format => 'list',
+      :multiple => true, :possible_values => ['value1', 'value2'])
+    entry = TimeEntry.find(1)
+    entry.custom_field_values = {field.id => ['value1', 'value2']}
+    entry.save!
+
+    get :index, :project_id => 1, :format => 'csv'
+    assert_response :success
+    assert_include '"value1, value2"', @response.body
   end
 
   def test_csv_big_5
@@ -359,7 +586,7 @@ class TimelogControllerTest < ActionController::TestCase
     get :index, :project_id => 1, :format => 'csv',
         :from => '2011-11-10', :to => '2011-11-10'
     assert_response :success
-    assert_equal 'text/csv', @response.content_type
+    assert_equal 'text/csv; header=present', @response.content_type
     ar = @response.body.chomp.split("\n")
     s1 = "\xa4\xe9\xb4\xc1"
     if str_utf8.respond_to?(:force_encoding)
@@ -396,7 +623,7 @@ class TimelogControllerTest < ActionController::TestCase
     get :index, :project_id => 1, :format => 'csv',
         :from => '2011-11-10', :to => '2011-11-10'
     assert_response :success
-    assert_equal 'text/csv', @response.content_type
+    assert_equal 'text/csv; header=present', @response.content_type
     ar = @response.body.chomp.split("\n")
     s1 = "\xa4\xe9\xb4\xc1"
     if str_utf8.respond_to?(:force_encoding)
@@ -412,6 +639,74 @@ class TimelogControllerTest < ActionController::TestCase
       assert_equal "??", s2
     else
       assert_equal "\xa5H???", s2
+    end
+  end
+
+  def test_csv_tw
+    with_settings :default_language => "zh-TW" do
+      str1  = "test_csv_tw"
+      user = User.find_by_id(3)
+      te1 = TimeEntry.create(:spent_on => '2011-11-10',
+                             :hours    => 999.9,
+                             :project  => Project.find(1),
+                             :user     => user,
+                             :activity => TimeEntryActivity.find_by_name('Design'),
+                             :comments => str1)
+      te2 = TimeEntry.find_by_comments(str1)
+      assert_not_nil te2
+      assert_equal 999.9, te2.hours
+      assert_equal 3, te2.user_id
+
+      get :index, :project_id => 1, :format => 'csv',
+          :from => '2011-11-10', :to => '2011-11-10'
+      assert_response :success
+      assert_equal 'text/csv; header=present', @response.content_type
+
+      ar = @response.body.chomp.split("\n")
+      s2 = ar[1].split(",")[7]
+      assert_equal '999.9', s2
+
+      str_tw = "Traditional Chinese (\xe7\xb9\x81\xe9\xab\x94\xe4\xb8\xad\xe6\x96\x87)"
+      if str_tw.respond_to?(:force_encoding)
+        str_tw.force_encoding('UTF-8')
+      end
+      assert_equal str_tw, l(:general_lang_name)
+      assert_equal ',', l(:general_csv_separator)
+      assert_equal '.', l(:general_csv_decimal_separator)
+    end
+  end
+
+  def test_csv_fr
+    with_settings :default_language => "fr" do
+      str1  = "test_csv_fr"
+      user = User.find_by_id(3)
+      te1 = TimeEntry.create(:spent_on => '2011-11-10',
+                             :hours    => 999.9,
+                             :project  => Project.find(1),
+                             :user     => user,
+                             :activity => TimeEntryActivity.find_by_name('Design'),
+                             :comments => str1)
+      te2 = TimeEntry.find_by_comments(str1)
+      assert_not_nil te2
+      assert_equal 999.9, te2.hours
+      assert_equal 3, te2.user_id
+
+      get :index, :project_id => 1, :format => 'csv',
+          :from => '2011-11-10', :to => '2011-11-10'
+      assert_response :success
+      assert_equal 'text/csv; header=present', @response.content_type
+
+      ar = @response.body.chomp.split("\n")
+      s2 = ar[1].split(";")[7]
+      assert_equal '999,9', s2
+
+      str_fr = "Fran\xc3\xa7ais"
+      if str_fr.respond_to?(:force_encoding)
+        str_fr.force_encoding('UTF-8')
+      end
+      assert_equal str_fr, l(:general_lang_name)
+      assert_equal ';', l(:general_csv_separator)
+      assert_equal ',', l(:general_csv_decimal_separator)
     end
   end
 end
